@@ -20,12 +20,6 @@ bun install
 bun run tauri dev
 ```
 
-## Current State
-
-- OpenAI syncs live from your local Codex/ChatGPT sign-in.
-- Claude syncs live from your local Claude Code sign-in.
-- GitHub Copilot is manual for now.
-
 ## OpenAI
 
 - If needed, sign into Codex with ChatGPT:
@@ -48,13 +42,16 @@ claude
 - In the app, click `Sync Claude`.
 - The Claude card shows the live session window and weekly window.
 
-## Manual Providers
+## GitHub Copilot
 
-Copilot keeps the minimum fields needed for the recommendation:
+- If needed, sign into GitHub CLI:
 
-- used
-- limit
-- reset day
+```bash
+gh auth login
+```
+
+- In the app, click `Sync Copilot`.
+- The Copilot card shows the live monthly premium requests quota.
 
 ## Troubleshooting
 
@@ -69,3 +66,9 @@ Copilot keeps the minimum fields needed for the recommendation:
 - `Setup`: sign into Claude Code (`claude`).
 - `Auth`: your local Claude Code session expired; sign in again.
 - `Error`: check that the `claude` CLI is installed, then sync Claude again.
+
+### GitHub Copilot
+
+- `Setup`: sign into GitHub CLI (`gh auth login`).
+- `Auth`: your GitHub login expired; run `gh auth login` again.
+- `Error`: check that the `gh` CLI is installed and your connection is up, then sync Copilot again.

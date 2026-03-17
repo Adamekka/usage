@@ -97,6 +97,40 @@
     resetLabel: string | null;
   };
 
+  type CopilotSnapshotStatus =
+    | "ok"
+    | "needs_auth"
+    | "auth_error"
+    | "request_error";
+
+  type CopilotTrackedSubscription = {
+    plan: string;
+    unit: string;
+    used: number;
+    limit: number;
+  };
+
+  type CopilotSnapshot = {
+    status: CopilotSnapshotStatus;
+    statusMessage: string;
+    authPath: string;
+    authSource: string;
+    fetchedAt: string | null;
+    plan: string | null;
+    usedPercent: number | null;
+    resetAt: number | null;
+    subscription: CopilotTrackedSubscription | null;
+  };
+
+  type CopilotWindowDisplay = {
+    label: string;
+    usedPercent: number;
+    progressWidth: number;
+    tone: HealthTone;
+    resetAt: number | null;
+    resetLabel: string | null;
+  };
+
   type Provider = {
     id: ProviderId;
     name: string;
@@ -180,11 +214,16 @@
   let openAiSyncing = $state(false);
   let claudeSnapshot = $state<ClaudeSnapshot | null>(null);
   let claudeSyncing = $state(false);
+  let copilotSnapshot = $state<CopilotSnapshot | null>(null);
+  let copilotSyncing = $state(false);
   let statusMessage = $state<string | null>(null);
   let mounted = $state(false);
 
   let openAiWindows = $derived.by(() => buildOpenAiWindows(openAiSnapshot));
   let claudeWindows = $derived.by(() => buildClaudeWindows(claudeSnapshot));
+  let copilotWindow = $derived.by<CopilotWindowDisplay | null>(() =>
+    buildCopilotWindow(copilotSnapshot),
+  );
   let rankedProviders = $derived.by(() =>
     [...providers].sort(compareProviders),
   );
@@ -296,7 +335,11 @@
   }
 
   function isManualProvider(provider: Provider): boolean {
-    return provider.id !== "openai" && provider.id !== "claude";
+    return (
+      provider.id !== "openai" &&
+      provider.id !== "claude" &&
+      provider.id !== "copilot"
+    );
   }
 
   function formatWholeNumber(value: number): string {
@@ -506,6 +549,28 @@
     }));
   }
 
+  function buildCopilotWindow(
+    snapshot: CopilotSnapshot | null,
+  ): CopilotWindowDisplay | null {
+    if (snapshot?.status !== "ok" || snapshot.usedPercent === null) {
+      return null;
+    }
+
+    const usedPercent = snapshot.usedPercent;
+
+    return {
+      label: "Monthly",
+      usedPercent,
+      progressWidth: Math.min(usedPercent, 100),
+      tone: toneForPercent(usedPercent),
+      resetAt: snapshot.resetAt,
+      resetLabel:
+        snapshot.resetAt !== null
+          ? formatResetDate(new Date(snapshot.resetAt * 1000), false)
+          : null,
+    };
+  }
+
   function tightestClaudeWindow(): ClaudeWindowDisplay | null {
     let candidate: ClaudeWindowDisplay | null = null;
 
@@ -564,6 +629,42 @@
     return "Error";
   }
 
+  function copilotSyncTone(snapshot: CopilotSnapshot | null): SyncTone {
+    if (snapshot === null) {
+      return "neutral";
+    }
+
+    if (snapshot.status === "ok") {
+      return "calm";
+    }
+
+    if (snapshot.status === "needs_auth") {
+      return "watch";
+    }
+
+    return "risk";
+  }
+
+  function copilotSyncLabel(snapshot: CopilotSnapshot | null): string {
+    if (snapshot === null) {
+      return "Idle";
+    }
+
+    if (snapshot.status === "ok") {
+      return "Live";
+    }
+
+    if (snapshot.status === "needs_auth") {
+      return "Setup";
+    }
+
+    if (snapshot.status === "auth_error") {
+      return "Auth";
+    }
+
+    return "Error";
+  }
+
   function tightestOpenAiWindow(): OpenAiWindowDisplay | null {
     let candidate: OpenAiWindowDisplay | null = null;
 
@@ -597,6 +698,10 @@
       return tightestClaudeWindow()?.usedPercent ?? 101;
     }
 
+    if (provider.id === "copilot") {
+      return copilotWindow?.usedPercent ?? 101;
+    }
+
     return (provider.used / provider.limit) * 100;
   }
 
@@ -611,6 +716,10 @@
 
     if (provider.id === "claude") {
       return claudeWindows.length > 0;
+    }
+
+    if (provider.id === "copilot") {
+      return copilotWindow !== null;
     }
 
     return true;
@@ -628,6 +737,17 @@
     }
 
     if (provider.id === "claude") {
+      return null;
+    }
+
+    if (provider.id === "copilot") {
+      if (
+        copilotWindow?.resetAt !== null &&
+        copilotWindow?.resetAt !== undefined
+      ) {
+        return new Date(copilotWindow.resetAt * 1000);
+      }
+
       return null;
     }
 
@@ -707,12 +827,26 @@
       return `${tightest.label} is the tightest Claude window at ${Math.round(tightest.usedPercent)}%.`;
     }
 
+    if (provider.id === "copilot") {
+      if (!copilotWindow) {
+        return copilotSnapshot?.statusMessage ?? "Sync Copilot to compare it.";
+      }
+
+      const sub = copilotSnapshot?.subscription;
+
+      if (sub && sub.limit > 0) {
+        return `${Math.round(sub.used)} of ${Math.round(sub.limit)} premium requests used this month.`;
+      }
+
+      return `${Math.round(copilotWindow.usedPercent)}% of monthly premium requests used.`;
+    }
+
     return `${manualRemainingLabel(provider)}. Resets ${providerResetLabel(provider)}.`;
   }
 
   function recommendationTitle(): string {
     if (!recommendedProvider) {
-      return "Sync OpenAI and Claude, then update Copilot manually.";
+      return "Sync all providers to compare them.";
     }
 
     const pressure = providerPressure(recommendedProvider);
@@ -886,6 +1020,47 @@
     }
   }
 
+  async function refreshCopilotSnapshot(): Promise<void> {
+    copilotSyncing = true;
+
+    try {
+      const snapshot = await invoke<CopilotSnapshot>("fetch_copilot_snapshot");
+      copilotSnapshot = snapshot;
+
+      if (snapshot.status === "ok" && snapshot.subscription) {
+        const provider = readProvider("copilot");
+
+        if (provider) {
+          provider.plan = snapshot.subscription.plan;
+          provider.unit = snapshot.subscription.unit;
+          provider.used = snapshot.subscription.used;
+          provider.limit = snapshot.subscription.limit;
+        }
+      }
+    } catch (error) {
+      const message =
+        typeof error === "string"
+          ? error
+          : error instanceof Error
+            ? error.message
+            : "Copilot sync is available in the Tauri desktop shell.";
+
+      copilotSnapshot = {
+        status: "request_error",
+        statusMessage: message,
+        authPath: "~/.config/gh/hosts.yml",
+        authSource: "gh_cli",
+        fetchedAt: null,
+        plan: null,
+        usedPercent: null,
+        resetAt: null,
+        subscription: null,
+      };
+    } finally {
+      copilotSyncing = false;
+    }
+  }
+
   async function refreshClaudeSnapshot(): Promise<void> {
     claudeSyncing = true;
 
@@ -941,6 +1116,7 @@
 
     void refreshOpenAiSnapshot();
     void refreshClaudeSnapshot();
+    void refreshCopilotSnapshot();
   });
 
   $effect(() => {
@@ -983,6 +1159,19 @@
       <span class={`status-pill status-pill-${claudeSyncTone(claudeSnapshot)}`}>
         {claudeSyncLabel(claudeSnapshot)}
       </span>
+      <button
+        type="button"
+        class="sync-button"
+        onclick={refreshCopilotSnapshot}
+        disabled={copilotSyncing}
+      >
+        {copilotSyncing ? "Syncing..." : "Sync Copilot"}
+      </button>
+      <span
+        class={`status-pill status-pill-${copilotSyncTone(copilotSnapshot)}`}
+      >
+        {copilotSyncLabel(copilotSnapshot)}
+      </span>
     </div>
   </section>
 
@@ -1015,6 +1204,13 @@
                 class={`status-pill status-pill-${claudeSyncTone(claudeSnapshot)}`}
               >
                 {claudeSyncLabel(claudeSnapshot)}
+              </span>
+            {/if}
+            {#if provider.id === "copilot"}
+              <span
+                class={`status-pill status-pill-${copilotSyncTone(copilotSnapshot)}`}
+              >
+                {copilotSyncLabel(copilotSnapshot)}
               </span>
             {/if}
             <span class={`status-pill status-pill-${providerTone(provider)}`}>
@@ -1079,6 +1275,32 @@
               </section>
             {/each}
           </div>
+        {:else if provider.id === "copilot" && copilotWindow !== null}
+          <div class="window-list">
+            <section class="window-card">
+              <div class="meter-row">
+                <span>{copilotWindow.label}</span>
+                <span>{Math.round(copilotWindow.usedPercent)}% used</span>
+              </div>
+
+              <div
+                class="progress-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.min(copilotWindow.usedPercent, 100)}
+              >
+                <div
+                  class={`progress-fill progress-fill-${copilotWindow.tone}`}
+                  style={`width: ${copilotWindow.progressWidth}%; --provider-accent: ${provider.accent};`}
+                ></div>
+              </div>
+
+              {#if copilotWindow.resetLabel}
+                <p class="window-copy">Resets {copilotWindow.resetLabel}.</p>
+              {/if}
+            </section>
+          </div>
         {:else}
           <section class="window-card">
             <div class="meter-row">
@@ -1092,7 +1314,7 @@
                 {/if}
               </span>
               <span>
-                {#if (provider.id === "openai" || provider.id === "claude") && !providerHasComparableData(provider)}
+                {#if (provider.id === "openai" || provider.id === "claude" || provider.id === "copilot") && !providerHasComparableData(provider)}
                   sync needed
                 {:else}
                   {Math.round(providerPressure(provider))}% used
@@ -1104,8 +1326,19 @@
               class="progress-track"
               role="progressbar"
               aria-valuemin={0}
-              aria-valuemax={provider.id === "openai" || provider.id === "claude" ? 100 : provider.limit}
-              aria-valuenow={Math.min(provider.id === "openai" || provider.id === "claude" ? providerPressure(provider) : provider.used, provider.limit)}
+              aria-valuemax={provider.id === "openai" ||
+              provider.id === "claude" ||
+              provider.id === "copilot"
+                ? 100
+                : provider.limit}
+              aria-valuenow={Math.min(
+                provider.id === "openai" ||
+                  provider.id === "claude" ||
+                  provider.id === "copilot"
+                  ? providerPressure(provider)
+                  : provider.used,
+                provider.limit,
+              )}
             >
               <div
                 class={`progress-fill progress-fill-${providerTone(provider)}`}
@@ -1118,121 +1351,126 @@
                 {openAiSnapshot?.statusMessage ?? "Sync OpenAI to compare it."}
               {:else if provider.id === "claude"}
                 {claudeSnapshot?.statusMessage ?? "Sync Claude to compare it."}
+              {:else if provider.id === "copilot"}
+                {copilotSnapshot?.statusMessage ??
+                  "Sync Copilot to compare it."}
               {:else}
                 Resets {providerResetLabel(provider)}.
               {/if}
             </p>
           </section>
         {/if}
-
-
       </article>
     {/each}
   </section>
 
-  <section class="manual-shell" aria-label="Manual providers">
-    <div class="section-header">
-      <div>
-        <p class="eyebrow">Manual Limits</p>
-        <h2>Copilot only</h2>
+  {#if providers.filter(isManualProvider).length > 0}
+    <section class="manual-shell" aria-label="Manual providers">
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Manual Limits</p>
+          <h2>Copilot only</h2>
+        </div>
+        <p class="section-text">
+          Just enough to keep the recommendation honest.
+        </p>
       </div>
-      <p class="section-text">Just enough to keep the recommendation honest.</p>
-    </div>
 
-    <div class="manual-list">
-      {#each providers.filter(isManualProvider) as provider}
-        <section
-          class="manual-row"
-          style={`--provider-accent: ${provider.accent};`}
-        >
-          <div class="manual-copy">
-            <p class="provider-name">{provider.name}</p>
-            <strong>{formatManualUsage(provider)}</strong>
-            <small>{providerResetLabel(provider)}</small>
-          </div>
+      <div class="manual-list">
+        {#each providers.filter(isManualProvider) as provider}
+          <section
+            class="manual-row"
+            style={`--provider-accent: ${provider.accent};`}
+          >
+            <div class="manual-copy">
+              <p class="provider-name">{provider.name}</p>
+              <strong>{formatManualUsage(provider)}</strong>
+              <small>{providerResetLabel(provider)}</small>
+            </div>
 
-          <label class="field">
-            <span>Used</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={provider.used}
-              oninput={(event: Event) =>
-                updateManualNumber(
-                  provider,
-                  "used",
-                  event.currentTarget instanceof HTMLInputElement
-                    ? event.currentTarget.value
-                    : "",
-                )}
-            />
-          </label>
+            <label class="field">
+              <span>Used</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={provider.used}
+                oninput={(event: Event) =>
+                  updateManualNumber(
+                    provider,
+                    "used",
+                    event.currentTarget instanceof HTMLInputElement
+                      ? event.currentTarget.value
+                      : "",
+                  )}
+              />
+            </label>
 
-          <label class="field">
-            <span>Limit</span>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={provider.limit}
-              oninput={(event: Event) =>
-                updateManualNumber(
-                  provider,
-                  "limit",
-                  event.currentTarget instanceof HTMLInputElement
-                    ? event.currentTarget.value
-                    : "",
-                )}
-            />
-          </label>
+            <label class="field">
+              <span>Limit</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={provider.limit}
+                oninput={(event: Event) =>
+                  updateManualNumber(
+                    provider,
+                    "limit",
+                    event.currentTarget instanceof HTMLInputElement
+                      ? event.currentTarget.value
+                      : "",
+                  )}
+              />
+            </label>
 
-          <label class="field">
-            <span>Resets</span>
-            <input
-              type="number"
-              min="1"
-              max="31"
-              step="1"
-              value={provider.resetDay}
-              oninput={(event: Event) =>
-                updateManualNumber(
-                  provider,
-                  "resetDay",
-                  event.currentTarget instanceof HTMLInputElement
-                    ? event.currentTarget.value
-                    : "",
-                )}
-            />
-          </label>
+            <label class="field">
+              <span>Resets</span>
+              <input
+                type="number"
+                min="1"
+                max="31"
+                step="1"
+                value={provider.resetDay}
+                oninput={(event: Event) =>
+                  updateManualNumber(
+                    provider,
+                    "resetDay",
+                    event.currentTarget instanceof HTMLInputElement
+                      ? event.currentTarget.value
+                      : "",
+                  )}
+              />
+            </label>
 
-          <div class="manual-actions">
-            <button
-              type="button"
-              class="chip-button"
-              onclick={() => nudgeManualUsage(provider, -1)}
-            >
-              -1
-            </button>
-            <button
-              type="button"
-              class="chip-button"
-              onclick={() => nudgeManualUsage(provider, 1)}
-            >
-              +1
-            </button>
-            <button
-              type="button"
-              class="chip-button subtle"
-              onclick={() => clearManualUsage(provider)}
-            >
-              Clear
-            </button>
-          </div>
-        </section>
-      {/each}
-    </div>
-  </section>
+            <div class="manual-actions">
+              <button
+                type="button"
+                class="chip-button"
+                onclick={() => nudgeManualUsage(provider, -1)}
+              >
+                -1
+              </button>
+              <button
+                type="button"
+                class="chip-button"
+                onclick={() => nudgeManualUsage(provider, 1)}
+              >
+                +1
+              </button>
+              <button
+                type="button"
+                class="chip-button subtle"
+                onclick={() => clearManualUsage(provider)}
+              >
+                Clear
+              </button>
+            </div>
+          </section>
+        {/each}
+      </div>
+    </section>
+  {/if}
 </main>
 
 <style>
@@ -1580,11 +1818,11 @@
     }
 
     .hero-actions,
-  .card-name h2 {
-    margin-top: 0.5rem;
-  }
+    .card-name h2 {
+      margin-top: 0.5rem;
+    }
 
-  .card-pills,
+    .card-pills,
     .manual-actions {
       justify-items: start;
       justify-content: flex-start;
