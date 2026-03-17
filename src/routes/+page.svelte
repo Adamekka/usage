@@ -3,8 +3,8 @@
   import { onMount } from "svelte";
 
   type ProviderId = "openai" | "claude" | "copilot";
-  type HealthTone = "calm" | "watch" | "risk";
-  type SyncTone = "neutral" | "calm" | "watch" | "risk";
+  type HealthTone = "calm" | "watch" | "risk" | "overlimit";
+  type SyncTone = "neutral" | "calm" | "watch" | "risk" | "overlimit";
   type OpenAiSnapshotStatus =
     | "ok"
     | "needs_auth"
@@ -471,6 +471,10 @@
   }
 
   function toneForPercent(percent: number): HealthTone {
+    if (percent >= 100) {
+      return "overlimit";
+    }
+
     if (percent >= 95) {
       return "risk";
     }
@@ -894,6 +898,10 @@
 
   function providerStatusLabel(provider: Provider): string {
     const pressure = providerLongTermPressure(provider);
+
+    if (pressure >= 100) {
+      return "Over limit";
+    }
 
     if (pressure >= 95) {
       return "Avoid";
@@ -1560,8 +1568,16 @@
             {#each openAiWindows as window}
               <section class="window-card">
                 <div class="meter-row">
-                  <span>{window.label}</span>
-                  <span>{Math.round(window.usedPercent)}% used</span>
+                  <span>
+                    {window.label}
+                    {#if window.usedPercent >= 100}
+                      <span class="overlimit-text"> (Over Limit)</span>
+                    {/if}
+                  </span>
+                  <span
+                    class={window.usedPercent >= 100 ? "overlimit-text" : ""}
+                    >{Math.round(window.usedPercent)}% used</span
+                  >
                 </div>
 
                 <div
@@ -1588,8 +1604,16 @@
             {#each claudeWindows as window}
               <section class="window-card">
                 <div class="meter-row">
-                  <span>{window.label}</span>
-                  <span>{Math.round(window.usedPercent)}% used</span>
+                  <span>
+                    {window.label}
+                    {#if window.usedPercent >= 100}
+                      <span class="overlimit-text"> (Over Limit)</span>
+                    {/if}
+                  </span>
+                  <span
+                    class={window.usedPercent >= 100 ? "overlimit-text" : ""}
+                    >{Math.round(window.usedPercent)}% used</span
+                  >
                 </div>
 
                 <div
@@ -1615,8 +1639,17 @@
           <div class="window-list">
             <section class="window-card">
               <div class="meter-row">
-                <span>{copilotWindow.label}</span>
-                <span>{Math.round(copilotWindow.usedPercent)}% used</span>
+                <span>
+                  {copilotWindow.label}
+                  {#if copilotWindow.usedPercent >= 100}
+                    <span class="overlimit-text"> (Over Limit)</span>
+                  {/if}
+                </span>
+                <span
+                  class={copilotWindow.usedPercent >= 100
+                    ? "overlimit-text"
+                    : ""}>{Math.round(copilotWindow.usedPercent)}% used</span
+                >
               </div>
 
               <div
@@ -1648,8 +1681,15 @@
                 {:else}
                   {formatManualUsage(provider)}
                 {/if}
+                {#if providerPressure(provider) >= 100}
+                  <span class="overlimit-text"> (Over Limit)</span>
+                {/if}
               </span>
-              <span>
+              <span
+                class={providerPressure(provider) >= 100
+                  ? "overlimit-text"
+                  : ""}
+              >
                 {#if (provider.id === "openai" || provider.id === "claude" || provider.id === "copilot") && !providerHasComparableData(provider)}
                   sync needed
                 {:else}
@@ -1819,9 +1859,10 @@
 <style>
   .page-shell {
     display: grid;
-    gap: 0.9rem;
+    gap: 0.5rem;
+    align-content: start;
     min-height: 100vh;
-    padding: 0.9rem;
+    padding: 0.5rem;
     background: radial-gradient(
         circle at top right,
         rgba(139, 233, 253, 0.08),
@@ -1833,6 +1874,15 @@
         transparent 32%
       ),
       var(--dracula-background);
+  }
+
+  .hero-shell,
+  .notice-banner,
+  .provider-grid,
+  .manual-shell {
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
   }
 
   .hero-shell,
@@ -1860,8 +1910,8 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 1rem;
+    gap: 0.75rem;
+    padding: 0.75rem;
   }
 
   .hero-copy,
@@ -1982,6 +2032,13 @@
     color: var(--dracula-red);
   }
 
+  .status-pill-overlimit {
+    border-color: rgba(255, 85, 85, 0.8);
+    background: rgba(255, 85, 85, 0.15);
+    color: var(--dracula-red);
+    font-weight: bold;
+  }
+
   .notice-banner {
     padding: 0.75rem 0.85rem;
   }
@@ -1993,7 +2050,7 @@
   }
 
   .provider-grid {
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 
   .provider-card,
@@ -2003,7 +2060,7 @@
 
   .provider-card {
     display: grid;
-    gap: 0.75rem;
+    gap: 0.5rem;
     border-color: color-mix(
       in srgb,
       var(--provider-accent) 55%,
@@ -2031,13 +2088,13 @@
 
   .window-list {
     display: grid;
-    gap: 0.65rem;
+    gap: 0.35rem;
   }
 
   .window-card {
     display: grid;
-    gap: 0.45rem;
-    padding: 0.75rem;
+    gap: 0.35rem;
+    padding: 0.5rem;
     background: color-mix(
       in srgb,
       var(--dracula-background) 74%,
@@ -2083,6 +2140,21 @@
 
   .progress-fill-risk {
     background: var(--dracula-red);
+  }
+
+  .progress-fill-overlimit {
+    background: repeating-linear-gradient(
+      -45deg,
+      var(--dracula-red),
+      var(--dracula-red) 6px,
+      color-mix(in srgb, var(--dracula-red) 40%, transparent) 6px,
+      color-mix(in srgb, var(--dracula-red) 40%, transparent) 12px
+    );
+  }
+
+  .overlimit-text {
+    color: var(--dracula-red);
+    font-weight: bold;
   }
 
   .cache-notice {
