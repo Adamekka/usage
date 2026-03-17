@@ -677,6 +677,104 @@
     return candidate;
   }
 
+  // Long-term windows only (weekly/monthly) — used for ranking and recommendation.
+  // The 5h / session windows are displayed on the card but do not drive the score.
+
+  function openAiLongTermWindow(): OpenAiWindowDisplay | null {
+    return openAiWindows.find((w) => w.key === "secondary") ?? null;
+  }
+
+  function claudeWeeklyWindow(): ClaudeWindowDisplay | null {
+    return claudeWindows.find((w) => w.kind === "weekly") ?? null;
+  }
+
+  function providerLongTermPressure(provider: Provider): number {
+    if (provider.id === "openai") {
+      return openAiLongTermWindow()?.usedPercent ?? 101;
+    }
+
+    if (provider.id === "claude") {
+      return claudeWeeklyWindow()?.usedPercent ?? 101;
+    }
+
+    if (provider.id === "copilot") {
+      return copilotWindow?.usedPercent ?? 101;
+    }
+
+    return (provider.used / provider.limit) * 100;
+  }
+
+  function providerLongTermResetDate(provider: Provider): Date | null {
+    if (provider.id === "openai") {
+      const w = openAiLongTermWindow();
+      return w?.resetAt != null ? new Date(w.resetAt * 1000) : null;
+    }
+
+    if (provider.id === "claude") {
+      const w = claudeWeeklyWindow();
+      return w?.resetAt != null ? new Date(w.resetAt * 1000) : null;
+    }
+
+    if (provider.id === "copilot") {
+      return copilotWindow?.resetAt != null
+        ? new Date(copilotWindow.resetAt * 1000)
+        : null;
+    }
+
+    return nextResetDate(provider.resetDay);
+  }
+
+  // Score = remaining% / daysUntilReset.
+  // Higher means more quota available relative to how soon it refills → better to use now.
+  // Returns -1 when no long-term data is available so unsynced providers sort last.
+  function providerScore(provider: Provider): number {
+    const pressure = providerLongTermPressure(provider);
+
+    if (pressure > 100) {
+      return -1;
+    }
+
+    const remaining = 100 - pressure;
+    const resetDate = providerLongTermResetDate(provider);
+
+    if (!resetDate) {
+      // No reset date known — treat as a 30-day window so it doesn't get over-boosted.
+      return remaining / 30;
+    }
+
+    const msUntilReset = Math.max(resetDate.getTime() - Date.now(), 0);
+    const daysUntilReset = Math.max(msUntilReset / 86_400_000, 0.5);
+
+    return remaining / daysUntilReset;
+  }
+
+  // Human-readable score breakdown, e.g. "14.0 (70% left / 5d)".
+  // Returns null when no long-term data is available.
+  function providerScoreLabel(provider: Provider): string | null {
+    const score = providerScore(provider);
+
+    if (score < 0) {
+      return null;
+    }
+
+    const pressure = providerLongTermPressure(provider);
+    const remaining = Math.round(100 - pressure);
+    const resetDate = providerLongTermResetDate(provider);
+
+    if (!resetDate) {
+      return `${score.toFixed(1)} (${remaining}% left)`;
+    }
+
+    const msUntilReset = Math.max(resetDate.getTime() - Date.now(), 0);
+    const daysUntilReset = msUntilReset / 86_400_000;
+    const daysLabel =
+      daysUntilReset < 1
+        ? `${Math.ceil(daysUntilReset * 24)}h`
+        : `${Math.ceil(daysUntilReset)}d`;
+
+    return `${score.toFixed(1)} (${remaining}% left / ${daysLabel})`;
+  }
+
   function openAiSummaryLabel(): string | null {
     if (openAiWindows.length === 0) {
       return null;
@@ -706,7 +804,7 @@
   }
 
   function providerTone(provider: Provider): HealthTone {
-    return toneForPercent(providerPressure(provider));
+    return toneForPercent(providerLongTermPressure(provider));
   }
 
   function providerHasComparableData(provider: Provider): boolean {
@@ -779,7 +877,7 @@
   }
 
   function providerStatusLabel(provider: Provider): string {
-    const pressure = providerPressure(provider);
+    const pressure = providerLongTermPressure(provider);
 
     if (pressure >= 95) {
       return "Avoid";
@@ -798,33 +896,47 @@
 
   function providerCopy(provider: Provider): string {
     if (provider.id === "openai") {
-      const tightest = tightestOpenAiWindow();
-      const weekly = openAiWindows.find((window) => window.key === "secondary");
+      const weekly = openAiLongTermWindow();
 
-      if (!tightest) {
+      if (!weekly) {
         return openAiSnapshot?.statusMessage ?? "Sync OpenAI to compare it.";
       }
 
-      if (weekly && tightest.key !== "secondary") {
-        return `${tightest.label} is the tightest OpenAI window at ${Math.round(tightest.usedPercent)}%. Weekly is ${Math.round(weekly.usedPercent)}%.`;
+      let text = `Weekly: ${Math.round(weekly.usedPercent)}% used.`;
+
+      if (weekly.resetLabel) {
+        text += ` Resets ${weekly.resetLabel}.`;
       }
 
-      return `${tightest.label} is the tightest OpenAI window at ${Math.round(tightest.usedPercent)}%.`;
+      const primary = openAiWindows.find((w) => w.key === "primary");
+
+      if (primary) {
+        text += ` ${primary.label}: ${Math.round(primary.usedPercent)}%.`;
+      }
+
+      return text;
     }
 
     if (provider.id === "claude") {
-      const tightest = tightestClaudeWindow();
-      const weekly = claudeWindows.find((window) => window.kind === "weekly");
+      const weekly = claudeWeeklyWindow();
 
-      if (!tightest) {
+      if (!weekly) {
         return claudeSnapshot?.statusMessage ?? "Sync Claude to compare it.";
       }
 
-      if (weekly && tightest.kind !== "weekly") {
-        return `${tightest.label} is the tightest Claude window at ${Math.round(tightest.usedPercent)}%. Weekly is ${Math.round(weekly.usedPercent)}%.`;
+      let text = `Weekly: ${Math.round(weekly.usedPercent)}% used.`;
+
+      if (weekly.resetLabel) {
+        text += ` Resets ${weekly.resetLabel}.`;
       }
 
-      return `${tightest.label} is the tightest Claude window at ${Math.round(tightest.usedPercent)}%.`;
+      const session = claudeWindows.find((w) => w.kind === "session");
+
+      if (session) {
+        text += ` ${session.label}: ${Math.round(session.usedPercent)}%.`;
+      }
+
+      return text;
     }
 
     if (provider.id === "copilot") {
@@ -849,7 +961,7 @@
       return "Sync all providers to compare them.";
     }
 
-    const pressure = providerPressure(recommendedProvider);
+    const pressure = providerLongTermPressure(recommendedProvider);
 
     if (pressure >= 95) {
       return `Everything is tight. ${recommendedProvider.name} is still the least constrained.`;
@@ -884,18 +996,8 @@
       return leftAvailability - rightAvailability;
     }
 
-    const pressureDifference = providerPressure(left) - providerPressure(right);
-
-    if (pressureDifference !== 0) {
-      return pressureDifference;
-    }
-
-    const leftResetTime =
-      providerResetDate(left)?.getTime() ?? Number.POSITIVE_INFINITY;
-    const rightResetTime =
-      providerResetDate(right)?.getTime() ?? Number.POSITIVE_INFINITY;
-
-    return leftResetTime - rightResetTime;
+    // Higher score = more quota per remaining day = better = sort first (descending).
+    return providerScore(right) - providerScore(left);
   }
 
   function openAiSyncTone(snapshot: OpenAiSnapshot | null): SyncTone {
@@ -1360,6 +1462,13 @@
             </p>
           </section>
         {/if}
+
+        {#if providerScoreLabel(provider) !== null}
+          <div class="score-row">
+            <span class="score-key">score</span>
+            <span class="score-value">{providerScoreLabel(provider)}</span>
+          </div>
+        {/if}
       </article>
     {/each}
   </section>
@@ -1740,6 +1849,28 @@
 
   .progress-fill-risk {
     background: var(--dracula-red);
+  }
+
+  .score-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-top: 0.2rem;
+    border-top: 1px solid var(--dracula-current-line);
+  }
+
+  .score-key {
+    color: var(--dracula-comment);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .score-value {
+    color: var(--provider-accent);
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
   }
 
   .provider-summary {
