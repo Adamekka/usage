@@ -23,7 +23,7 @@ bun run tauri dev
 ## Current State
 
 - OpenAI syncs live from your local Codex/ChatGPT sign-in.
-- Claude is manual for now.
+- Claude syncs live from your local Claude Code sign-in.
 - GitHub Copilot is manual for now.
 
 ## OpenAI
@@ -35,11 +35,22 @@ codex
 ```
 
 - In the app, click `Sync OpenAI`.
-- The OpenAI card should show the live short window and weekly window when available.
+- The OpenAI card shows the live short window and weekly window.
+
+## Claude
+
+- If needed, sign into Claude Code:
+
+```bash
+claude
+```
+
+- In the app, click `Sync Claude`.
+- The Claude card shows the live session window and weekly window.
 
 ## Manual Providers
 
-Claude and Copilot only keep the minimum fields needed for the recommendation:
+Copilot keeps the minimum fields needed for the recommendation:
 
 - used
 - limit
@@ -47,6 +58,14 @@ Claude and Copilot only keep the minimum fields needed for the recommendation:
 
 ## Troubleshooting
 
+### OpenAI
+
 - `Setup`: sign into Codex with ChatGPT.
 - `Auth`: your local Codex login likely expired; sign in again.
 - `Error`: check your connection, then sync OpenAI again.
+
+### Claude
+
+- `Setup`: sign into Claude Code (`claude`).
+- `Auth`: your local Claude Code session expired; sign in again.
+- `Error`: check that the `claude` CLI is installed, then sync Claude again.

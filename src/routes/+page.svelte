@@ -51,6 +51,52 @@
     subscription: OpenAiTrackedSubscription | null;
   };
 
+  type ClaudeSnapshotStatus =
+    | "ok"
+    | "needs_auth"
+    | "auth_error"
+    | "request_error";
+
+  type ClaudeUsageWindowKind = "session" | "weekly";
+
+  type ClaudeUsageWindow = {
+    kind: ClaudeUsageWindowKind;
+    label: string;
+    usedPercent: number;
+    resetAt: number | null;
+  };
+
+  type ClaudeTrackedSubscription = {
+    plan: string;
+    unit: string;
+    used: number;
+    limit: number;
+  };
+
+  type ClaudeSnapshot = {
+    status: ClaudeSnapshotStatus;
+    statusMessage: string;
+    authPath: string;
+    authSource: string;
+    fetchedAt: string | null;
+    email: string | null;
+    organizationId: string | null;
+    organizationName: string | null;
+    subscriptionType: string | null;
+    windows: ClaudeUsageWindow[];
+    subscription: ClaudeTrackedSubscription | null;
+  };
+
+  type ClaudeWindowDisplay = {
+    kind: ClaudeUsageWindowKind;
+    label: string;
+    usedPercent: number;
+    progressWidth: number;
+    tone: HealthTone;
+    resetAt: number | null;
+    resetLabel: string | null;
+  };
+
   type Provider = {
     id: ProviderId;
     name: string;
@@ -132,10 +178,13 @@
   let providers = $state<Provider[]>(createDefaults());
   let openAiSnapshot = $state<OpenAiSnapshot | null>(null);
   let openAiSyncing = $state(false);
+  let claudeSnapshot = $state<ClaudeSnapshot | null>(null);
+  let claudeSyncing = $state(false);
   let statusMessage = $state<string | null>(null);
   let mounted = $state(false);
 
   let openAiWindows = $derived.by(() => buildOpenAiWindows(openAiSnapshot));
+  let claudeWindows = $derived.by(() => buildClaudeWindows(claudeSnapshot));
   let rankedProviders = $derived.by(() =>
     [...providers].sort(compareProviders),
   );
@@ -247,7 +296,7 @@
   }
 
   function isManualProvider(provider: Provider): boolean {
-    return provider.id !== "openai";
+    return provider.id !== "openai" && provider.id !== "claude";
   }
 
   function formatWholeNumber(value: number): string {
@@ -436,6 +485,85 @@
     ].filter((window): window is OpenAiWindowDisplay => window !== null);
   }
 
+  function buildClaudeWindows(
+    snapshot: ClaudeSnapshot | null,
+  ): ClaudeWindowDisplay[] {
+    if (snapshot?.status !== "ok") {
+      return [];
+    }
+
+    return snapshot.windows.map((window) => ({
+      kind: window.kind,
+      label: window.label,
+      usedPercent: window.usedPercent,
+      progressWidth: Math.min(window.usedPercent, 100),
+      tone: toneForPercent(window.usedPercent),
+      resetAt: window.resetAt,
+      resetLabel:
+        window.resetAt !== null
+          ? formatResetDate(new Date(window.resetAt * 1000), true)
+          : null,
+    }));
+  }
+
+  function tightestClaudeWindow(): ClaudeWindowDisplay | null {
+    let candidate: ClaudeWindowDisplay | null = null;
+
+    for (const window of claudeWindows) {
+      if (candidate === null || window.usedPercent > candidate.usedPercent) {
+        candidate = window;
+      }
+    }
+
+    return candidate;
+  }
+
+  function claudeSummaryLabel(): string | null {
+    if (claudeWindows.length === 0) {
+      return null;
+    }
+
+    return claudeWindows
+      .map((window) => `${window.label} ${Math.round(window.usedPercent)}%`)
+      .join(" | ");
+  }
+
+  function claudeSyncTone(snapshot: ClaudeSnapshot | null): SyncTone {
+    if (snapshot === null) {
+      return "neutral";
+    }
+
+    if (snapshot.status === "ok") {
+      return "calm";
+    }
+
+    if (snapshot.status === "needs_auth") {
+      return "watch";
+    }
+
+    return "risk";
+  }
+
+  function claudeSyncLabel(snapshot: ClaudeSnapshot | null): string {
+    if (snapshot === null) {
+      return "Idle";
+    }
+
+    if (snapshot.status === "ok") {
+      return "Live";
+    }
+
+    if (snapshot.status === "needs_auth") {
+      return "Setup";
+    }
+
+    if (snapshot.status === "auth_error") {
+      return "Auth";
+    }
+
+    return "Error";
+  }
+
   function tightestOpenAiWindow(): OpenAiWindowDisplay | null {
     let candidate: OpenAiWindowDisplay | null = null;
 
@@ -465,6 +593,10 @@
       return tightestOpenAiWindow()?.usedPercent ?? 101;
     }
 
+    if (provider.id === "claude") {
+      return tightestClaudeWindow()?.usedPercent ?? 101;
+    }
+
     return (provider.used / provider.limit) * 100;
   }
 
@@ -473,7 +605,15 @@
   }
 
   function providerHasComparableData(provider: Provider): boolean {
-    return provider.id !== "openai" || openAiWindows.length > 0;
+    if (provider.id === "openai") {
+      return openAiWindows.length > 0;
+    }
+
+    if (provider.id === "claude") {
+      return claudeWindows.length > 0;
+    }
+
+    return true;
   }
 
   function providerResetDate(provider: Provider): Date | null {
@@ -487,10 +627,28 @@
       return null;
     }
 
+    if (provider.id === "claude") {
+      return null;
+    }
+
     return nextResetDate(provider.resetDay);
   }
 
   function providerResetLabel(provider: Provider): string {
+    if (provider.id === "claude") {
+      const tightest = tightestClaudeWindow();
+
+      if (tightest?.resetLabel) {
+        return tightest.resetLabel;
+      }
+
+      if (claudeWindows.length > 0) {
+        return "see Claude.ai";
+      }
+
+      return "sync needed";
+    }
+
     const resetDate = providerResetDate(provider);
 
     if (!resetDate) {
@@ -534,12 +692,27 @@
       return `${tightest.label} is the tightest OpenAI window at ${Math.round(tightest.usedPercent)}%.`;
     }
 
+    if (provider.id === "claude") {
+      const tightest = tightestClaudeWindow();
+      const weekly = claudeWindows.find((window) => window.kind === "weekly");
+
+      if (!tightest) {
+        return claudeSnapshot?.statusMessage ?? "Sync Claude to compare it.";
+      }
+
+      if (weekly && tightest.kind !== "weekly") {
+        return `${tightest.label} is the tightest Claude window at ${Math.round(tightest.usedPercent)}%. Weekly is ${Math.round(weekly.usedPercent)}%.`;
+      }
+
+      return `${tightest.label} is the tightest Claude window at ${Math.round(tightest.usedPercent)}%.`;
+    }
+
     return `${manualRemainingLabel(provider)}. Resets ${providerResetLabel(provider)}.`;
   }
 
   function recommendationTitle(): string {
     if (!recommendedProvider) {
-      return "Sync OpenAI and update the manual providers.";
+      return "Sync OpenAI and Claude, then update Copilot manually.";
     }
 
     const pressure = providerPressure(recommendedProvider);
@@ -713,6 +886,49 @@
     }
   }
 
+  async function refreshClaudeSnapshot(): Promise<void> {
+    claudeSyncing = true;
+
+    try {
+      const snapshot = await invoke<ClaudeSnapshot>("fetch_claude_snapshot");
+      claudeSnapshot = snapshot;
+
+      if (snapshot.status === "ok" && snapshot.subscription) {
+        const provider = readProvider("claude");
+
+        if (provider) {
+          provider.plan = snapshot.subscription.plan;
+          provider.unit = snapshot.subscription.unit;
+          provider.used = snapshot.subscription.used;
+          provider.limit = snapshot.subscription.limit;
+        }
+      }
+    } catch (error) {
+      const message =
+        typeof error === "string"
+          ? error
+          : error instanceof Error
+            ? error.message
+            : "Claude sync is available in the Tauri desktop shell.";
+
+      claudeSnapshot = {
+        status: "request_error",
+        statusMessage: message,
+        authPath: "~/.claude.json",
+        authSource: "claude_code",
+        fetchedAt: null,
+        email: null,
+        organizationId: null,
+        organizationName: null,
+        subscriptionType: null,
+        windows: [],
+        subscription: null,
+      };
+    } finally {
+      claudeSyncing = false;
+    }
+  }
+
   onMount(() => {
     const source =
       localStorage.getItem(STORAGE_KEY) ??
@@ -724,6 +940,7 @@
     mounted = true;
 
     void refreshOpenAiSnapshot();
+    void refreshClaudeSnapshot();
   });
 
   $effect(() => {
@@ -755,6 +972,17 @@
       <span class={`status-pill status-pill-${openAiSyncTone(openAiSnapshot)}`}>
         {openAiSyncLabel(openAiSnapshot)}
       </span>
+      <button
+        type="button"
+        class="sync-button"
+        onclick={refreshClaudeSnapshot}
+        disabled={claudeSyncing}
+      >
+        {claudeSyncing ? "Syncing..." : "Sync Claude"}
+      </button>
+      <span class={`status-pill status-pill-${claudeSyncTone(claudeSnapshot)}`}>
+        {claudeSyncLabel(claudeSnapshot)}
+      </span>
     </div>
   </section>
 
@@ -769,7 +997,7 @@
         style={`--provider-accent: ${provider.accent};`}
       >
         <div class="card-header">
-          <div>
+          <div class="card-name">
             <p class="provider-name">{provider.name}</p>
             <h2>{provider.plan}</h2>
           </div>
@@ -780,6 +1008,13 @@
                 class={`status-pill status-pill-${openAiSyncTone(openAiSnapshot)}`}
               >
                 {openAiSyncLabel(openAiSnapshot)}
+              </span>
+            {/if}
+            {#if provider.id === "claude"}
+              <span
+                class={`status-pill status-pill-${claudeSyncTone(claudeSnapshot)}`}
+              >
+                {claudeSyncLabel(claudeSnapshot)}
               </span>
             {/if}
             <span class={`status-pill status-pill-${providerTone(provider)}`}>
@@ -816,19 +1051,52 @@
               </section>
             {/each}
           </div>
+        {:else if provider.id === "claude" && claudeWindows.length > 0}
+          <div class="window-list">
+            {#each claudeWindows as window}
+              <section class="window-card">
+                <div class="meter-row">
+                  <span>{window.label}</span>
+                  <span>{Math.round(window.usedPercent)}% used</span>
+                </div>
+
+                <div
+                  class="progress-track"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.min(window.usedPercent, 100)}
+                >
+                  <div
+                    class={`progress-fill progress-fill-${window.tone}`}
+                    style={`width: ${window.progressWidth}%; --provider-accent: ${provider.accent};`}
+                  ></div>
+                </div>
+
+                {#if window.resetLabel}
+                  <p class="window-copy">Resets {window.resetLabel}.</p>
+                {/if}
+              </section>
+            {/each}
+          </div>
         {:else}
           <section class="window-card">
             <div class="meter-row">
-              <span
-                >{provider.id === "openai"
-                  ? "OpenAI usage"
-                  : formatManualUsage(provider)}</span
-              >
               <span>
-                {provider.id === "openai" &&
-                !providerHasComparableData(provider)
-                  ? "sync needed"
-                  : `${Math.round(providerPressure(provider))}% used`}
+                {#if provider.id === "openai"}
+                  OpenAI usage
+                {:else if provider.id === "claude"}
+                  Claude usage
+                {:else}
+                  {formatManualUsage(provider)}
+                {/if}
+              </span>
+              <span>
+                {#if (provider.id === "openai" || provider.id === "claude") && !providerHasComparableData(provider)}
+                  sync needed
+                {:else}
+                  {Math.round(providerPressure(provider))}% used
+                {/if}
               </span>
             </div>
 
@@ -836,8 +1104,8 @@
               class="progress-track"
               role="progressbar"
               aria-valuemin={0}
-              aria-valuemax={provider.limit}
-              aria-valuenow={Math.min(provider.used, provider.limit)}
+              aria-valuemax={provider.id === "openai" || provider.id === "claude" ? 100 : provider.limit}
+              aria-valuenow={Math.min(provider.id === "openai" || provider.id === "claude" ? providerPressure(provider) : provider.used, provider.limit)}
             >
               <div
                 class={`progress-fill progress-fill-${providerTone(provider)}`}
@@ -846,19 +1114,18 @@
             </div>
 
             <p class="window-copy">
-              {provider.id === "openai"
-                ? (openAiSnapshot?.statusMessage ??
-                  "Sync OpenAI to compare it.")
-                : `Resets ${providerResetLabel(provider)}.`}
+              {#if provider.id === "openai"}
+                {openAiSnapshot?.statusMessage ?? "Sync OpenAI to compare it."}
+              {:else if provider.id === "claude"}
+                {claudeSnapshot?.statusMessage ?? "Sync Claude to compare it."}
+              {:else}
+                Resets {providerResetLabel(provider)}.
+              {/if}
             </p>
           </section>
         {/if}
 
-        <p class="provider-copy">{providerCopy(provider)}</p>
 
-        {#if provider.id === "openai" && openAiSummaryLabel()}
-          <p class="provider-summary">{openAiSummaryLabel()}</p>
-        {/if}
       </article>
     {/each}
   </section>
@@ -867,7 +1134,7 @@
     <div class="section-header">
       <div>
         <p class="eyebrow">Manual Limits</p>
-        <h2>Claude and Copilot only</h2>
+        <h2>Copilot only</h2>
       </div>
       <p class="section-text">Just enough to keep the recommendation honest.</p>
     </div>
@@ -1313,7 +1580,11 @@
     }
 
     .hero-actions,
-    .card-pills,
+  .card-name h2 {
+    margin-top: 0.5rem;
+  }
+
+  .card-pills,
     .manual-actions {
       justify-items: start;
       justify-content: flex-start;
