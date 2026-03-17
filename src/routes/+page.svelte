@@ -162,6 +162,9 @@
 
   const STORAGE_KEY = "usage-provider-picker:v1";
   const LEGACY_STORAGE_KEY = "usage-tracker:v1";
+  const OPENAI_CACHE_KEY = "usage-snapshot:openai:v1";
+  const CLAUDE_CACHE_KEY = "usage-snapshot:claude:v1";
+  const COPILOT_CACHE_KEY = "usage-snapshot:copilot:v1";
   const numberFormatter = new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 0,
   });
@@ -216,6 +219,11 @@
   let claudeSyncing = $state(false);
   let copilotSnapshot = $state<CopilotSnapshot | null>(null);
   let copilotSyncing = $state(false);
+  // Non-null means the displayed snapshot came from cache, not a live sync.
+  // Value is the ms timestamp of when the snapshot was saved to cache.
+  let openAiCachedAt = $state<number | null>(null);
+  let claudeCachedAt = $state<number | null>(null);
+  let copilotCachedAt = $state<number | null>(null);
   let statusMessage = $state<string | null>(null);
   let mounted = $state(false);
 
@@ -594,6 +602,8 @@
   }
 
   function claudeSyncTone(snapshot: ClaudeSnapshot | null): SyncTone {
+    if (claudeCachedAt !== null) return "watch";
+
     if (snapshot === null) {
       return "neutral";
     }
@@ -610,6 +620,8 @@
   }
 
   function claudeSyncLabel(snapshot: ClaudeSnapshot | null): string {
+    if (claudeCachedAt !== null) return "Cached";
+
     if (snapshot === null) {
       return "Idle";
     }
@@ -630,6 +642,8 @@
   }
 
   function copilotSyncTone(snapshot: CopilotSnapshot | null): SyncTone {
+    if (copilotCachedAt !== null) return "watch";
+
     if (snapshot === null) {
       return "neutral";
     }
@@ -646,6 +660,8 @@
   }
 
   function copilotSyncLabel(snapshot: CopilotSnapshot | null): string {
+    if (copilotCachedAt !== null) return "Cached";
+
     if (snapshot === null) {
       return "Idle";
     }
@@ -1001,6 +1017,8 @@
   }
 
   function openAiSyncTone(snapshot: OpenAiSnapshot | null): SyncTone {
+    if (openAiCachedAt !== null) return "watch";
+
     if (snapshot === null) {
       return "neutral";
     }
@@ -1017,6 +1035,8 @@
   }
 
   function openAiSyncLabel(snapshot: OpenAiSnapshot | null): string {
+    if (openAiCachedAt !== null) return "Cached";
+
     if (snapshot === null) {
       return "Idle";
     }
@@ -1080,43 +1100,135 @@
     provider.used = 0;
   }
 
+  function saveSnapshotToCache(key: string, snapshot: unknown): void {
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify({ snapshot, savedAt: Date.now() }),
+      );
+    } catch {
+      // Ignore write errors (e.g. private browsing quota).
+    }
+  }
+
+  function loadSnapshotFromCache<T>(
+    key: string,
+  ): { snapshot: T; savedAt: number } | null {
+    try {
+      const raw = localStorage.getItem(key);
+
+      if (!raw) {
+        return null;
+      }
+
+      const parsed: unknown = JSON.parse(raw);
+
+      if (
+        !isRecord(parsed) ||
+        typeof parsed.savedAt !== "number" ||
+        !isRecord(parsed.snapshot)
+      ) {
+        return null;
+      }
+
+      return { snapshot: parsed.snapshot as T, savedAt: parsed.savedAt };
+    } catch {
+      return null;
+    }
+  }
+
+  function formatCacheAge(savedAt: number): string {
+    const ms = Date.now() - savedAt;
+    const minutes = Math.floor(ms / 60_000);
+
+    if (minutes < 1) {
+      return "just now";
+    }
+
+    if (minutes < 60) {
+      return `${minutes}m ago`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+
+    if (hours < 24) {
+      return `${hours}h ago`;
+    }
+
+    return `${Math.floor(hours / 24)}d ago`;
+  }
+
+  function providerCachedAt(provider: Provider): number | null {
+    if (provider.id === "openai") return openAiCachedAt;
+    if (provider.id === "claude") return claudeCachedAt;
+    if (provider.id === "copilot") return copilotCachedAt;
+    return null;
+  }
+
   async function refreshOpenAiSnapshot(): Promise<void> {
     openAiSyncing = true;
 
     try {
       const snapshot = await invoke<OpenAiSnapshot>("fetch_openai_snapshot");
-      openAiSnapshot = snapshot;
 
-      if (snapshot.status === "ok" && snapshot.subscription) {
-        const provider = readProvider("openai");
+      if (snapshot.status === "ok") {
+        saveSnapshotToCache(OPENAI_CACHE_KEY, snapshot);
+        openAiSnapshot = snapshot;
+        openAiCachedAt = null;
 
-        if (provider) {
-          provider.plan = snapshot.subscription.plan;
-          provider.unit = snapshot.subscription.unit;
-          provider.used = snapshot.subscription.used;
-          provider.limit = snapshot.subscription.limit;
+        if (snapshot.subscription) {
+          const provider = readProvider("openai");
+
+          if (provider) {
+            provider.plan = snapshot.subscription.plan;
+            provider.unit = snapshot.subscription.unit;
+            provider.used = snapshot.subscription.used;
+            provider.limit = snapshot.subscription.limit;
+          }
         }
+      } else if (snapshot.status === "request_error") {
+        const cached = loadSnapshotFromCache<OpenAiSnapshot>(OPENAI_CACHE_KEY);
+
+        if (cached) {
+          openAiSnapshot = cached.snapshot;
+          openAiCachedAt = cached.savedAt;
+        } else {
+          openAiSnapshot = snapshot;
+          openAiCachedAt = null;
+        }
+      } else {
+        // needs_auth / auth_error — show the real error so the user knows to act.
+        openAiSnapshot = snapshot;
+        openAiCachedAt = null;
       }
     } catch (error) {
-      const message =
-        typeof error === "string"
-          ? error
-          : error instanceof Error
-            ? error.message
-            : "OpenAI sync is available in the Tauri desktop shell.";
+      const cached = loadSnapshotFromCache<OpenAiSnapshot>(OPENAI_CACHE_KEY);
 
-      openAiSnapshot = {
-        status: "request_error",
-        statusMessage: message,
-        authPath: "~/.codex/auth.json",
-        authSource: "codex",
-        fetchedAt: null,
-        planType: null,
-        rateLimit: null,
-        codeReviewRateLimit: null,
-        credits: null,
-        subscription: null,
-      };
+      if (cached) {
+        openAiSnapshot = cached.snapshot;
+        openAiCachedAt = cached.savedAt;
+      } else {
+        const message =
+          typeof error === "string"
+            ? error
+            : error instanceof Error
+              ? error.message
+              : "OpenAI sync is available in the Tauri desktop shell.";
+
+        openAiSnapshot = {
+          status: "request_error",
+          statusMessage: message,
+          authPath: "~/.codex/auth.json",
+          authSource: "codex",
+          fetchedAt: null,
+          planType: null,
+          rateLimit: null,
+          codeReviewRateLimit: null,
+          credits: null,
+          subscription: null,
+        };
+        openAiCachedAt = null;
+      }
     } finally {
       openAiSyncing = false;
     }
@@ -1127,37 +1239,64 @@
 
     try {
       const snapshot = await invoke<CopilotSnapshot>("fetch_copilot_snapshot");
-      copilotSnapshot = snapshot;
 
-      if (snapshot.status === "ok" && snapshot.subscription) {
-        const provider = readProvider("copilot");
+      if (snapshot.status === "ok") {
+        saveSnapshotToCache(COPILOT_CACHE_KEY, snapshot);
+        copilotSnapshot = snapshot;
+        copilotCachedAt = null;
 
-        if (provider) {
-          provider.plan = snapshot.subscription.plan;
-          provider.unit = snapshot.subscription.unit;
-          provider.used = snapshot.subscription.used;
-          provider.limit = snapshot.subscription.limit;
+        if (snapshot.subscription) {
+          const provider = readProvider("copilot");
+
+          if (provider) {
+            provider.plan = snapshot.subscription.plan;
+            provider.unit = snapshot.subscription.unit;
+            provider.used = snapshot.subscription.used;
+            provider.limit = snapshot.subscription.limit;
+          }
         }
+      } else if (snapshot.status === "request_error") {
+        const cached =
+          loadSnapshotFromCache<CopilotSnapshot>(COPILOT_CACHE_KEY);
+
+        if (cached) {
+          copilotSnapshot = cached.snapshot;
+          copilotCachedAt = cached.savedAt;
+        } else {
+          copilotSnapshot = snapshot;
+          copilotCachedAt = null;
+        }
+      } else {
+        copilotSnapshot = snapshot;
+        copilotCachedAt = null;
       }
     } catch (error) {
-      const message =
-        typeof error === "string"
-          ? error
-          : error instanceof Error
-            ? error.message
-            : "Copilot sync is available in the Tauri desktop shell.";
+      const cached = loadSnapshotFromCache<CopilotSnapshot>(COPILOT_CACHE_KEY);
 
-      copilotSnapshot = {
-        status: "request_error",
-        statusMessage: message,
-        authPath: "~/.config/gh/hosts.yml",
-        authSource: "gh_cli",
-        fetchedAt: null,
-        plan: null,
-        usedPercent: null,
-        resetAt: null,
-        subscription: null,
-      };
+      if (cached) {
+        copilotSnapshot = cached.snapshot;
+        copilotCachedAt = cached.savedAt;
+      } else {
+        const message =
+          typeof error === "string"
+            ? error
+            : error instanceof Error
+              ? error.message
+              : "Copilot sync is available in the Tauri desktop shell.";
+
+        copilotSnapshot = {
+          status: "request_error",
+          statusMessage: message,
+          authPath: "~/.config/gh/hosts.yml",
+          authSource: "gh_cli",
+          fetchedAt: null,
+          plan: null,
+          usedPercent: null,
+          resetAt: null,
+          subscription: null,
+        };
+        copilotCachedAt = null;
+      }
     } finally {
       copilotSyncing = false;
     }
@@ -1168,39 +1307,65 @@
 
     try {
       const snapshot = await invoke<ClaudeSnapshot>("fetch_claude_snapshot");
-      claudeSnapshot = snapshot;
 
-      if (snapshot.status === "ok" && snapshot.subscription) {
-        const provider = readProvider("claude");
+      if (snapshot.status === "ok") {
+        saveSnapshotToCache(CLAUDE_CACHE_KEY, snapshot);
+        claudeSnapshot = snapshot;
+        claudeCachedAt = null;
 
-        if (provider) {
-          provider.plan = snapshot.subscription.plan;
-          provider.unit = snapshot.subscription.unit;
-          provider.used = snapshot.subscription.used;
-          provider.limit = snapshot.subscription.limit;
+        if (snapshot.subscription) {
+          const provider = readProvider("claude");
+
+          if (provider) {
+            provider.plan = snapshot.subscription.plan;
+            provider.unit = snapshot.subscription.unit;
+            provider.used = snapshot.subscription.used;
+            provider.limit = snapshot.subscription.limit;
+          }
         }
+      } else if (snapshot.status === "request_error") {
+        const cached = loadSnapshotFromCache<ClaudeSnapshot>(CLAUDE_CACHE_KEY);
+
+        if (cached) {
+          claudeSnapshot = cached.snapshot;
+          claudeCachedAt = cached.savedAt;
+        } else {
+          claudeSnapshot = snapshot;
+          claudeCachedAt = null;
+        }
+      } else {
+        claudeSnapshot = snapshot;
+        claudeCachedAt = null;
       }
     } catch (error) {
-      const message =
-        typeof error === "string"
-          ? error
-          : error instanceof Error
-            ? error.message
-            : "Claude sync is available in the Tauri desktop shell.";
+      const cached = loadSnapshotFromCache<ClaudeSnapshot>(CLAUDE_CACHE_KEY);
 
-      claudeSnapshot = {
-        status: "request_error",
-        statusMessage: message,
-        authPath: "~/.claude.json",
-        authSource: "claude_code",
-        fetchedAt: null,
-        email: null,
-        organizationId: null,
-        organizationName: null,
-        subscriptionType: null,
-        windows: [],
-        subscription: null,
-      };
+      if (cached) {
+        claudeSnapshot = cached.snapshot;
+        claudeCachedAt = cached.savedAt;
+      } else {
+        const message =
+          typeof error === "string"
+            ? error
+            : error instanceof Error
+              ? error.message
+              : "Claude sync is available in the Tauri desktop shell.";
+
+        claudeSnapshot = {
+          status: "request_error",
+          statusMessage: message,
+          authPath: "~/.claude.json",
+          authSource: "claude_code",
+          fetchedAt: null,
+          email: null,
+          organizationId: null,
+          organizationName: null,
+          subscriptionType: null,
+          windows: [],
+          subscription: null,
+        };
+        claudeCachedAt = null;
+      }
     } finally {
       claudeSyncing = false;
     }
@@ -1214,6 +1379,65 @@
 
     providers = stored.providers;
     statusMessage = stored.notice;
+
+    // Pre-populate from cache so the UI has data to show before the first sync
+    // completes. The sync will replace cached data with live data (or keep
+    // the cache and mark it stale if the live request fails).
+    const openAiCached = loadSnapshotFromCache<OpenAiSnapshot>(OPENAI_CACHE_KEY);
+
+    if (openAiCached) {
+      openAiSnapshot = openAiCached.snapshot;
+      openAiCachedAt = openAiCached.savedAt;
+
+      if (openAiCached.snapshot.subscription) {
+        const provider = readProvider("openai");
+
+        if (provider) {
+          provider.plan = openAiCached.snapshot.subscription.plan;
+          provider.unit = openAiCached.snapshot.subscription.unit;
+          provider.used = openAiCached.snapshot.subscription.used;
+          provider.limit = openAiCached.snapshot.subscription.limit;
+        }
+      }
+    }
+
+    const claudeCached = loadSnapshotFromCache<ClaudeSnapshot>(CLAUDE_CACHE_KEY);
+
+    if (claudeCached) {
+      claudeSnapshot = claudeCached.snapshot;
+      claudeCachedAt = claudeCached.savedAt;
+
+      if (claudeCached.snapshot.subscription) {
+        const provider = readProvider("claude");
+
+        if (provider) {
+          provider.plan = claudeCached.snapshot.subscription.plan;
+          provider.unit = claudeCached.snapshot.subscription.unit;
+          provider.used = claudeCached.snapshot.subscription.used;
+          provider.limit = claudeCached.snapshot.subscription.limit;
+        }
+      }
+    }
+
+    const copilotCached =
+      loadSnapshotFromCache<CopilotSnapshot>(COPILOT_CACHE_KEY);
+
+    if (copilotCached) {
+      copilotSnapshot = copilotCached.snapshot;
+      copilotCachedAt = copilotCached.savedAt;
+
+      if (copilotCached.snapshot.subscription) {
+        const provider = readProvider("copilot");
+
+        if (provider) {
+          provider.plan = copilotCached.snapshot.subscription.plan;
+          provider.unit = copilotCached.snapshot.subscription.unit;
+          provider.used = copilotCached.snapshot.subscription.used;
+          provider.limit = copilotCached.snapshot.subscription.limit;
+        }
+      }
+    }
+
     mounted = true;
 
     void refreshOpenAiSnapshot();
@@ -1320,6 +1544,12 @@
             </span>
           </div>
         </div>
+
+        {#if providerCachedAt(provider) !== null}
+          <p class="cache-notice">
+            Cached data &middot; {formatCacheAge(providerCachedAt(provider) ?? 0)}
+          </p>
+        {/if}
 
         {#if provider.id === "openai" && openAiWindows.length > 0}
           <div class="window-list">
@@ -1849,6 +2079,16 @@
 
   .progress-fill-risk {
     background: var(--dracula-red);
+  }
+
+  .cache-notice {
+    padding: 0.3rem 0.55rem;
+    border: 1px solid rgba(241, 250, 140, 0.25);
+    border-radius: 6px;
+    background: rgba(241, 250, 140, 0.06);
+    color: var(--dracula-yellow);
+    font-size: 0.72rem;
+    line-height: 1.3;
   }
 
   .score-row {
