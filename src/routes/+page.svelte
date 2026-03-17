@@ -1383,7 +1383,8 @@
     // Pre-populate from cache so the UI has data to show before the first sync
     // completes. The sync will replace cached data with live data (or keep
     // the cache and mark it stale if the live request fails).
-    const openAiCached = loadSnapshotFromCache<OpenAiSnapshot>(OPENAI_CACHE_KEY);
+    const openAiCached =
+      loadSnapshotFromCache<OpenAiSnapshot>(OPENAI_CACHE_KEY);
 
     if (openAiCached) {
       openAiSnapshot = openAiCached.snapshot;
@@ -1401,7 +1402,8 @@
       }
     }
 
-    const claudeCached = loadSnapshotFromCache<ClaudeSnapshot>(CLAUDE_CACHE_KEY);
+    const claudeCached =
+      loadSnapshotFromCache<ClaudeSnapshot>(CLAUDE_CACHE_KEY);
 
     if (claudeCached) {
       claudeSnapshot = claudeCached.snapshot;
@@ -1547,7 +1549,9 @@
 
         {#if providerCachedAt(provider) !== null}
           <p class="cache-notice">
-            Cached data &middot; {formatCacheAge(providerCachedAt(provider) ?? 0)}
+            Cached data &middot; {formatCacheAge(
+              providerCachedAt(provider) ?? 0,
+            )}
           </p>
         {/if}
 
