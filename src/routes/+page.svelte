@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { onMount } from "svelte";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { onDestroy, onMount } from "svelte";
 
   type ProviderId = "openai" | "claude" | "copilot";
   type HealthTone = "calm" | "watch" | "risk" | "overlimit";
@@ -1453,6 +1454,31 @@
     void refreshOpenAiSnapshot();
     void refreshClaudeSnapshot();
     void refreshCopilotSnapshot();
+
+    // Re-fetch Claude every 2 minutes — it rate-limits frequently and the
+    // PTY-based fetch is slow, so polling increases the chance of getting a
+    // live result into cache without blocking the user.
+    claudeInterval = setInterval(() => {
+      void refreshClaudeSnapshot();
+    }, 60 * 60 * 1000);
+
+    // Re-fetch Claude immediately when the app window regains focus so the
+    // data is fresh after the user switches away and back.
+    getCurrentWindow()
+      .listen("tauri://focus", () => {
+        void refreshClaudeSnapshot();
+      })
+      .then((unlisten) => {
+        unlistenFocus = unlisten;
+      });
+  });
+
+  let claudeInterval: ReturnType<typeof setInterval> | undefined;
+  let unlistenFocus: (() => void) | undefined;
+
+  onDestroy(() => {
+    clearInterval(claudeInterval);
+    unlistenFocus?.();
   });
 
   $effect(() => {
