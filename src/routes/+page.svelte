@@ -225,6 +225,9 @@
   let openAiCachedAt = $state<number | null>(null);
   let claudeCachedAt = $state<number | null>(null);
   let copilotCachedAt = $state<number | null>(null);
+  // Last live-fetch error for Claude; survives the cache fallback so the user
+  // can see WHY the data is stale even when a cached snapshot is displayed.
+  let claudeError = $state<string | null>(null);
   let statusMessage = $state<string | null>(null);
   let mounted = $state(false);
 
@@ -1318,6 +1321,7 @@
       const snapshot = await invoke<ClaudeSnapshot>("fetch_claude_snapshot");
 
       if (snapshot.status === "ok") {
+        claudeError = null;
         saveSnapshotToCache(CLAUDE_CACHE_KEY, snapshot);
         claudeSnapshot = snapshot;
         claudeCachedAt = null;
@@ -1333,6 +1337,7 @@
           }
         }
       } else if (snapshot.status === "request_error") {
+        claudeError = snapshot.statusMessage;
         const cached = loadSnapshotFromCache<ClaudeSnapshot>(CLAUDE_CACHE_KEY);
 
         if (cached) {
@@ -1343,23 +1348,25 @@
           claudeCachedAt = null;
         }
       } else {
+        claudeError = null;
         claudeSnapshot = snapshot;
         claudeCachedAt = null;
       }
     } catch (error) {
+      const message =
+        typeof error === "string"
+          ? error
+          : error instanceof Error
+            ? error.message
+            : "Claude sync is available in the Tauri desktop shell.";
+
+      claudeError = message;
       const cached = loadSnapshotFromCache<ClaudeSnapshot>(CLAUDE_CACHE_KEY);
 
       if (cached) {
         claudeSnapshot = cached.snapshot;
         claudeCachedAt = cached.savedAt;
       } else {
-        const message =
-          typeof error === "string"
-            ? error
-            : error instanceof Error
-              ? error.message
-              : "Claude sync is available in the Tauri desktop shell.";
-
         claudeSnapshot = {
           status: "request_error",
           statusMessage: message,
@@ -1455,9 +1462,9 @@
     void refreshClaudeSnapshot();
     void refreshCopilotSnapshot();
 
-    // Re-fetch Claude every 2 minutes — it rate-limits frequently and the
-    // PTY-based fetch is slow, so polling increases the chance of getting a
-    // live result into cache without blocking the user.
+    // Re-fetch Claude every 60 minutes. The PTY-based fetch is slow and
+    // Claude Code rate-limits the /usage command, so a long interval avoids
+    // hammering it while still refreshing the cached result periodically.
     claudeInterval = setInterval(
       () => {
         void refreshClaudeSnapshot();
@@ -1590,6 +1597,9 @@
               providerCachedAt(provider) ?? 0,
             )}
           </p>
+        {/if}
+        {#if provider.id === "claude" && claudeError !== null}
+          <p class="sync-error-notice">{claudeError}</p>
         {/if}
 
         {#if provider.id === "openai" && openAiWindows.length > 0}
@@ -2192,6 +2202,16 @@
     border-radius: 6px;
     background: rgba(241, 250, 140, 0.06);
     color: var(--dracula-yellow);
+    font-size: 0.72rem;
+    line-height: 1.3;
+  }
+
+  .sync-error-notice {
+    padding: 0.3rem 0.55rem;
+    border: 1px solid rgba(255, 85, 85, 0.25);
+    border-radius: 6px;
+    background: rgba(255, 85, 85, 0.06);
+    color: var(--dracula-red);
     font-size: 0.72rem;
     line-height: 1.3;
   }

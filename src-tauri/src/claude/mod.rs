@@ -14,7 +14,7 @@ use claude_tracked_subscription::ClaudeTrackedSubscription;
 use claude_usage_window::ClaudeUsageWindow;
 use claude_usage_window_kind::ClaudeUsageWindowKind;
 use dirs::home_dir;
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -163,7 +163,9 @@ fn fetch_usage_windows(claude_binary: &Path) -> Result<Vec<ClaudeUsageWindow>, S
     let mut command = CommandBuilder::new(claude_binary.to_string_lossy().into_owned());
     command.cwd(workspace_path);
     command.env("TERM", "xterm-256color");
-    command.env("CLAUDE_CODE_SIMPLE", "1");
+    // Do not force Claude's simple/bare mode here. In Claude Code 2.1.81 it
+    // makes a Claude Pro account present as API-billed, and the interactive
+    // /usage command refuses to load subscription usage from that mode.
     command.env("CLAUDE_CODE_DISABLE_TERMINAL_TITLE", "1");
 
     let mut child = pty_pair
@@ -429,6 +431,13 @@ fn usage_error_message(screen: &str) -> Option<String> {
     if lower.contains("unknown skill: usage") {
         return Some(String::from(
             "This Claude Code build could not open the local /usage dialog.",
+        ));
+    }
+
+    // /usage is gated to subscription plans; API-key billing users see this message.
+    if lower.contains("only available for subscription plans") {
+        return Some(String::from(
+            "/usage is only available for Claude.ai subscription plans (Pro/Max). API Usage Billing is not supported.",
         ));
     }
 
