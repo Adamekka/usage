@@ -927,7 +927,7 @@
       const weekly = openAiLongTermWindow();
 
       if (!weekly) {
-        return openAiSnapshot?.statusMessage ?? "Sync OpenAI to compare it.";
+        return openAiSnapshot?.statusMessage ?? "Sync to compare it.";
       }
 
       let text = `Weekly: ${Math.round(weekly.usedPercent)}% used.`;
@@ -949,7 +949,7 @@
       const weekly = claudeWeeklyWindow();
 
       if (!weekly) {
-        return claudeSnapshot?.statusMessage ?? "Sync Claude to compare it.";
+        return claudeSnapshot?.statusMessage ?? "Sync to compare it.";
       }
 
       let text = `Weekly: ${Math.round(weekly.usedPercent)}% used.`;
@@ -969,7 +969,7 @@
 
     if (provider.id === "copilot") {
       if (!copilotWindow) {
-        return copilotSnapshot?.statusMessage ?? "Sync Copilot to compare it.";
+        return copilotSnapshot?.statusMessage ?? "Sync to compare it.";
       }
 
       const sub = copilotSnapshot?.subscription;
@@ -1175,6 +1175,18 @@
     if (provider.id === "claude") return claudeCachedAt;
     if (provider.id === "copilot") return copilotCachedAt;
     return null;
+  }
+
+  function refreshAllSnapshots(): void {
+    if (openAiSyncing || claudeSyncing || copilotSyncing) {
+      return;
+    }
+
+    void Promise.all([
+      refreshOpenAiSnapshot(),
+      refreshClaudeSnapshot(),
+      refreshCopilotSnapshot(),
+    ]);
   }
 
   async function refreshOpenAiSnapshot(): Promise<void> {
@@ -1458,9 +1470,7 @@
 
     mounted = true;
 
-    void refreshOpenAiSnapshot();
-    void refreshClaudeSnapshot();
-    void refreshCopilotSnapshot();
+    refreshAllSnapshots();
 
     // Re-fetch Claude every 60 minutes. The PTY-based fetch is slow and
     // Claude Code rate-limits the /usage command, so a long interval avoids
@@ -1512,38 +1522,13 @@
       <button
         type="button"
         class="sync-button"
-        onclick={refreshOpenAiSnapshot}
-        disabled={openAiSyncing}
+        onclick={refreshAllSnapshots}
+        disabled={openAiSyncing || claudeSyncing || copilotSyncing}
       >
-        {openAiSyncing ? "Syncing..." : "Sync OpenAI"}
+        {openAiSyncing || claudeSyncing || copilotSyncing
+          ? "Syncing..."
+          : "Sync"}
       </button>
-      <span class={`status-pill status-pill-${openAiSyncTone(openAiSnapshot)}`}>
-        {openAiSyncLabel(openAiSnapshot)}
-      </span>
-      <button
-        type="button"
-        class="sync-button"
-        onclick={refreshClaudeSnapshot}
-        disabled={claudeSyncing}
-      >
-        {claudeSyncing ? "Syncing..." : "Sync Claude"}
-      </button>
-      <span class={`status-pill status-pill-${claudeSyncTone(claudeSnapshot)}`}>
-        {claudeSyncLabel(claudeSnapshot)}
-      </span>
-      <button
-        type="button"
-        class="sync-button"
-        onclick={refreshCopilotSnapshot}
-        disabled={copilotSyncing}
-      >
-        {copilotSyncing ? "Syncing..." : "Sync Copilot"}
-      </button>
-      <span
-        class={`status-pill status-pill-${copilotSyncTone(copilotSnapshot)}`}
-      >
-        {copilotSyncLabel(copilotSnapshot)}
-      </span>
     </div>
   </section>
 
@@ -1763,12 +1748,11 @@
 
             <p class="window-copy">
               {#if provider.id === "openai"}
-                {openAiSnapshot?.statusMessage ?? "Sync OpenAI to compare it."}
+                {openAiSnapshot?.statusMessage ?? "Sync to compare it."}
               {:else if provider.id === "claude"}
-                {claudeSnapshot?.statusMessage ?? "Sync Claude to compare it."}
+                {claudeSnapshot?.statusMessage ?? "Sync to compare it."}
               {:else if provider.id === "copilot"}
-                {copilotSnapshot?.statusMessage ??
-                  "Sync Copilot to compare it."}
+                {copilotSnapshot?.statusMessage ?? "Sync to compare it."}
               {:else}
                 Resets {providerResetLabel(provider)}.
               {/if}
@@ -2026,6 +2010,10 @@
   }
 
   .sync-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 8rem;
     padding: 0.55rem 0.85rem;
   }
 
