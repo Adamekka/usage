@@ -12,6 +12,14 @@ struct ContentView: View {
     let store: UsageStore
 
     var body: some View {
+        let version: String = {
+            guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
+                preconditionFailure("CFBundleShortVersionString is missing from the app bundle")
+            }
+
+            return version
+        }()
+
         VStack(alignment: .leading, spacing: 14) {
             if let snapshot = store.snapshot {
                 let usage: WeeklyUsage = snapshot.weeklyUsage
@@ -118,6 +126,10 @@ struct ContentView: View {
                     .toggleStyle(.checkbox)
 
                 Spacer()
+
+                Text("v\(version)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Button {
                     Task { await self.store.refresh() }
