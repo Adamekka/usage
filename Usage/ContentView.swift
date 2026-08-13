@@ -69,23 +69,20 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                 }
 
-                Divider()
+                if snapshot.availableResetCount > 0 {
+                    Divider()
 
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Banked resets")
-                            .font(.headline)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Banked resets")
+                                .font(.headline)
 
-                        Spacer()
+                            Spacer()
 
-                        Text("\(snapshot.availableResetCount) available")
-                            .foregroundStyle(.secondary)
-                    }
+                            Text("\(snapshot.availableResetCount) available")
+                                .foregroundStyle(.secondary)
+                        }
 
-                    if snapshot.resetCredits.isEmpty {
-                        Text("No available resets")
-                            .foregroundStyle(.secondary)
-                    } else {
                         ForEach(Array(snapshot.resetCredits.enumerated()), id: \.element.id) { index, credit in
                             ResetCreditRow(credit: credit, number: index + 1)
                         }
