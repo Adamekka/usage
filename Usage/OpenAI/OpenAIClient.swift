@@ -7,6 +7,16 @@
 import Foundation
 
 struct OpenAIClient {
+    private enum Endpoint {
+        case resetCredits
+        case usage
+    }
+
+    private enum ResponseDisposition {
+        case noResetCredits
+        case success
+    }
+
     func fetchSnapshot() async throws -> OpenAISnapshot {
         let authURL: URL = FileManager.default
             .homeDirectoryForCurrentUser
@@ -25,7 +35,7 @@ struct OpenAIClient {
             throw OpenAIError.invalidCodexLogin
         }
 
-        func request(_ url: URL) async throws -> Data {
+        func request(_ url: URL) async throws -> (Data, HTTPURLResponse) {
             var request: URLRequest = .init(url: url)
             request.setValue("Bearer \(auth.tokens.accessToken)", forHTTPHeaderField: "Authorization")
             request.setValue("Usage/macOS", forHTTPHeaderField: "User-Agent")
@@ -42,22 +52,14 @@ struct OpenAIClient {
                 throw OpenAIError.invalidResponse
             }
 
-            if response.statusCode == 401 || response.statusCode == 403 {
-                throw OpenAIError.needsCodexLogin
-            }
-
-            guard (200 ..< 300).contains(response.statusCode) else {
-                throw OpenAIError.requestFailed(response.statusCode)
-            }
-
-            return data
+            return (data, response)
         }
 
         let usageURL: URL = .init(string: "https://chatgpt.com/backend-api/wham/usage")!
         let resetsURL: URL = .init(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!
 
-        async let usageData: Data = request(usageURL)
-        async let resetsData: Data = request(resetsURL)
+        async let pendingUsageResult: (Data, HTTPURLResponse) = request(usageURL)
+        async let pendingResetsResult: (Data, HTTPURLResponse) = request(resetsURL)
 
         let usageDecoder: JSONDecoder = .init()
         usageDecoder.dateDecodingStrategy = .secondsSince1970
@@ -67,8 +69,27 @@ struct OpenAIClient {
         resetsDecoder.dateDecodingStrategy = .iso8601
         resetsDecoder.keyDecodingStrategy = .convertFromSnakeCase
 
-        let usage: UsageResponse = try await usageDecoder.decode(UsageResponse.self, from: usageData)
-        let resets: ResetCreditsResponse = try await resetsDecoder.decode(ResetCreditsResponse.self, from: resetsData)
+        let usageResult: (Data, HTTPURLResponse) = try await pendingUsageResult
+        let usageData: Data = usageResult.0
+        let usageResponse: HTTPURLResponse = usageResult.1
+
+        _ = try Self.responseDisposition(statusCode: usageResponse.statusCode, endpoint: .usage)
+
+        let usage: UsageResponse = try usageDecoder.decode(UsageResponse.self, from: usageData)
+        let resetsResult: (Data, HTTPURLResponse) = try await pendingResetsResult
+        let resetsData: Data = resetsResult.0
+        let resetsResponse: HTTPURLResponse = resetsResult.1
+        let resets: ResetCreditsResponse = switch try Self.responseDisposition(
+            statusCode: resetsResponse.statusCode,
+            endpoint: .resetCredits,
+        ) {
+            case .noResetCredits:
+                .init(availableCount: 0, credits: [])
+
+            case .success:
+                try resetsDecoder.decode(ResetCreditsResponse.self, from: resetsData)
+        }
+
         let weeklyWindow: RateLimitWindow? = [usage.rateLimit?.primaryWindow, usage.rateLimit?.secondaryWindow]
             .compactMap(\.self)
             .first { $0.limitWindowSeconds == Int(WeeklyUsage.duration) }
@@ -104,4 +125,34 @@ struct OpenAIClient {
             ),
         )
     }
+
+    private static func responseDisposition(statusCode: Int, endpoint: Endpoint) throws -> ResponseDisposition {
+        if statusCode == 401 || statusCode == 403 {
+            switch endpoint {
+                case .resetCredits:
+                    // A valid usage response proves the login works; this endpoint uses authorization failures for no
+                    // credits.
+                    return .noResetCredits
+
+                case .usage:
+                    throw OpenAIError.needsCodexLogin
+            }
+        }
+
+        guard (200 ..< 300).contains(statusCode) else {
+            throw OpenAIError.requestFailed(statusCode)
+        }
+
+        return .success
+    }
+
+    #if DEBUG
+        static func resetCreditsAreUnavailableForTesting(statusCode: Int) throws -> Bool {
+            try self.responseDisposition(statusCode: statusCode, endpoint: .resetCredits) == .noResetCredits
+        }
+
+        static func validateUsageResponseForTesting(statusCode: Int) throws {
+            _ = try self.responseDisposition(statusCode: statusCode, endpoint: .usage)
+        }
+    #endif
 }

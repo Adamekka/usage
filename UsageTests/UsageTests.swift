@@ -22,6 +22,27 @@ struct UsageTests {
     }
 
     @Test
+    func `reset endpoint authorization failures mean no credits`() throws {
+        #expect(try OpenAIClient.resetCreditsAreUnavailableForTesting(statusCode: 401))
+        #expect(try OpenAIClient.resetCreditsAreUnavailableForTesting(statusCode: 403))
+        #expect(try !OpenAIClient.resetCreditsAreUnavailableForTesting(statusCode: 200))
+    }
+
+    @Test
+    func `usage endpoint authorization failure requires login`() {
+        #expect(throws: OpenAIError.needsCodexLogin) {
+            try OpenAIClient.validateUsageResponseForTesting(statusCode: 403)
+        }
+    }
+
+    @Test
+    func `unexpected reset endpoint failure remains explicit`() {
+        #expect(throws: OpenAIError.requestFailed(500)) {
+            try OpenAIClient.resetCreditsAreUnavailableForTesting(statusCode: 500)
+        }
+    }
+
+    @Test
     func `whole day pacing targets`() {
         let resetAt: Date = .init(timeIntervalSince1970: 7 * 24 * 60 * 60)
         let usage: WeeklyUsage = .init(resetAt: resetAt, usedPercent: 35)

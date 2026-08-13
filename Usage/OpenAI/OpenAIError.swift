@@ -6,7 +6,7 @@
 
 import Foundation
 
-enum OpenAIError: LocalizedError {
+enum OpenAIError: LocalizedError, Equatable {
     case invalidCodexLogin
     case invalidResponse
     case needsCodexLogin
