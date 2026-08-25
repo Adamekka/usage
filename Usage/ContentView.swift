@@ -26,6 +26,35 @@ struct ContentView: View {
                 let target: Double = usage.targetUsedPercent(at: .now)
                 let pacing: Double = usage.usedPercent - target
 
+                if let fiveHourUsage = snapshot.fiveHourUsage {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Label("5-hour limit", systemImage: "clock")
+                                .font(.headline)
+
+                            Spacer()
+
+                            Text("\(Int(fiveHourUsage.remainingPercent.rounded()))% left")
+                                .font(.title3.bold().monospacedDigit())
+                        }
+
+                        ProgressView(value: fiveHourUsage.remainingPercent, total: 100)
+                            .tint(.green)
+                            .accessibilityLabel("5-hour limit remaining")
+
+                        Text(
+                            "Resets "
+                                + fiveHourUsage.resetAt.formatted(
+                                    .dateTime.weekday(.wide).hour().minute(),
+                                ),
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline) {
                         Label("Weekly limit", systemImage: "calendar.badge.clock")
@@ -39,6 +68,7 @@ struct ContentView: View {
 
                     ProgressView(value: usage.remainingPercent, total: 100)
                         .tint(.green)
+                        .accessibilityLabel("Weekly limit remaining")
 
                     HStack {
                         Text(

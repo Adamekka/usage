@@ -90,9 +90,14 @@ struct OpenAIClient {
                 try resetsDecoder.decode(ResetCreditsResponse.self, from: resetsData)
         }
 
-        let weeklyWindow: RateLimitWindow? = [usage.rateLimit?.primaryWindow, usage.rateLimit?.secondaryWindow]
-            .compactMap(\.self)
-            .first { $0.limitWindowSeconds == Int(WeeklyUsage.duration) }
+        let fiveHourWindow: RateLimitWindow? = Self.rateLimitWindow(
+            duration: FiveHourUsage.duration,
+            rateLimit: usage.rateLimit,
+        )
+        let weeklyWindow: RateLimitWindow? = Self.rateLimitWindow(
+            duration: WeeklyUsage.duration,
+            rateLimit: usage.rateLimit,
+        )
 
         guard let weeklyWindow else {
             throw OpenAIError.weeklyLimitUnavailable
@@ -118,12 +123,21 @@ struct OpenAIClient {
 
         return OpenAISnapshot(
             availableResetCount: resets.availableCount,
+            fiveHourUsage: fiveHourWindow.map {
+                FiveHourUsage(resetAt: $0.resetAt, usedPercent: $0.usedPercent)
+            },
             resetCredits: availableResets,
             weeklyUsage: WeeklyUsage(
                 resetAt: weeklyWindow.resetAt,
                 usedPercent: weeklyWindow.usedPercent,
             ),
         )
+    }
+
+    private static func rateLimitWindow(duration: TimeInterval, rateLimit: RateLimit?) -> RateLimitWindow? {
+        [rateLimit?.primaryWindow, rateLimit?.secondaryWindow]
+            .compactMap(\.self)
+            .first { $0.limitWindowSeconds == Int(duration) }
     }
 
     private static func responseDisposition(statusCode: Int, endpoint: Endpoint) throws -> ResponseDisposition {
@@ -153,6 +167,10 @@ struct OpenAIClient {
 
         static func validateUsageResponseForTesting(statusCode: Int) throws {
             _ = try self.responseDisposition(statusCode: statusCode, endpoint: .usage)
+        }
+
+        static func rateLimitWindowForTesting(duration: TimeInterval, rateLimit: RateLimit?) -> RateLimitWindow? {
+            self.rateLimitWindow(duration: duration, rateLimit: rateLimit)
         }
     #endif
 }

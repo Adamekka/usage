@@ -6,6 +6,7 @@
 
 struct OpenAISnapshot {
     let availableResetCount: Int
+    let fiveHourUsage: FiveHourUsage?
     let resetCredits: [ResetCredit]
     let weeklyUsage: WeeklyUsage
 }

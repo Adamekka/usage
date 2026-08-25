@@ -56,5 +56,50 @@ struct UsageTests {
     func `usage remaining cannot be negative`() {
         #expect(WeeklyUsage(resetAt: .now, usedPercent: 87).remainingPercent == 13)
         #expect(WeeklyUsage(resetAt: .now, usedPercent: 105).remainingPercent == 0)
+        #expect(FiveHourUsage(resetAt: .now, usedPercent: 42).remainingPercent == 58)
+        #expect(FiveHourUsage(resetAt: .now, usedPercent: 110).remainingPercent == 0)
+    }
+
+    @Test
+    func `rate limit windows are identified by duration in either slot`() throws {
+        let fiveHourWindow: RateLimitWindow = .init(
+            limitWindowSeconds: Int(FiveHourUsage.duration),
+            resetAt: Date(timeIntervalSince1970: 5 * 60 * 60),
+            usedPercent: 18,
+        )
+        let weeklyWindow: RateLimitWindow = .init(
+            limitWindowSeconds: Int(WeeklyUsage.duration),
+            resetAt: Date(timeIntervalSince1970: 7 * 24 * 60 * 60),
+            usedPercent: 36,
+        )
+
+        let fiveHourFromSecondary: RateLimitWindow = try #require(
+            OpenAIClient.rateLimitWindowForTesting(
+                duration: FiveHourUsage.duration,
+                rateLimit: RateLimit(primaryWindow: weeklyWindow, secondaryWindow: fiveHourWindow),
+            ),
+        )
+        let fiveHourFromPrimary: RateLimitWindow = try #require(
+            OpenAIClient.rateLimitWindowForTesting(
+                duration: FiveHourUsage.duration,
+                rateLimit: RateLimit(primaryWindow: fiveHourWindow, secondaryWindow: weeklyWindow),
+            ),
+        )
+        let weeklyFromSecondary: RateLimitWindow = try #require(
+            OpenAIClient.rateLimitWindowForTesting(
+                duration: WeeklyUsage.duration,
+                rateLimit: RateLimit(primaryWindow: fiveHourWindow, secondaryWindow: weeklyWindow),
+            ),
+        )
+
+        #expect(fiveHourFromSecondary.usedPercent == 18)
+        #expect(fiveHourFromPrimary.usedPercent == 18)
+        #expect(weeklyFromSecondary.usedPercent == 36)
+        #expect(
+            OpenAIClient.rateLimitWindowForTesting(
+                duration: FiveHourUsage.duration,
+                rateLimit: RateLimit(primaryWindow: weeklyWindow, secondaryWindow: nil),
+            ) == nil,
+        )
     }
 }
