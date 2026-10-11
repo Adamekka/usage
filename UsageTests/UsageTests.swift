@@ -49,7 +49,41 @@ struct UsageTests {
 
         #expect(usage.currentDay(at: Date(timeIntervalSince1970: 1)) == 1)
         #expect(usage.currentDay(at: Date(timeIntervalSince1970: 24 * 60 * 60)) == 2)
-        #expect(usage.targetUsedPercent(at: Date(timeIntervalSince1970: 24 * 60 * 60)) == 100.0 / 7 * 2)
+        #expect(
+            usage.targetUsedPercent(at: Date(timeIntervalSince1970: 24 * 60 * 60), pacing: .linear) == 100.0 / 7 * 2,
+        )
+    }
+
+    @Test
+    func `logarithmic daily budgets match the agreed curve`() {
+        let resetAt: Date = .init(timeIntervalSince1970: WeeklyUsage.duration)
+        let usage: WeeklyUsage = .init(resetAt: resetAt, usedPercent: 35)
+        let dailyBudgets: [Double] = [33.3, 19.5, 13.8, 10.7, 8.8, 7.4, 6.4]
+        var previousTarget: Double = 0
+
+        for (index, budget) in dailyBudgets.enumerated() {
+            let date: Date = .init(timeIntervalSince1970: Double(index) * 24 * 60 * 60)
+            let target: Double = usage.targetUsedPercent(at: date, pacing: .logarithmic)
+
+            #expect(abs(target - previousTarget - budget) < 0.05)
+            previousTarget = target
+        }
+
+        #expect(previousTarget == 100)
+    }
+
+    @Test(arguments: WeeklyUsage.Pacing.allCases)
+    func `pacing targets keep whole day and reset boundaries`(pacing: WeeklyUsage.Pacing) {
+        let resetAt: Date = .init(timeIntervalSince1970: WeeklyUsage.duration)
+        let usage: WeeklyUsage = .init(resetAt: resetAt, usedPercent: 35)
+        let start: Date = .init(timeIntervalSince1970: 0)
+        let firstTarget: Double = usage.targetUsedPercent(at: start, pacing: pacing)
+
+        #expect(usage.targetUsedPercent(at: start.addingTimeInterval(-1), pacing: pacing) == firstTarget)
+        #expect(usage.targetUsedPercent(at: start.addingTimeInterval(24 * 60 * 60 - 1), pacing: pacing) == firstTarget)
+        #expect(usage.targetUsedPercent(at: resetAt.addingTimeInterval(-1), pacing: pacing) == 100)
+        #expect(usage.targetUsedPercent(at: resetAt, pacing: pacing) == 100)
+        #expect(usage.targetUsedPercent(at: resetAt.addingTimeInterval(1), pacing: pacing) == 100)
     }
 
     @Test

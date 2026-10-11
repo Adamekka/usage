@@ -11,6 +11,8 @@ import SwiftUI
 struct ContentView: View {
     let store: UsageStore
 
+    @AppStorage("weeklyPacing") private var pacing: WeeklyUsage.Pacing = .linear
+
     var body: some View {
         let version: String = {
             guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
@@ -23,7 +25,8 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 14) {
             if let snapshot = store.snapshot {
                 let usage: WeeklyUsage = snapshot.weeklyUsage
-                let target: Double = usage.targetUsedPercent(at: .now)
+                let now: Date = .now
+                let target: Double = usage.targetUsedPercent(at: now, pacing: self.pacing)
                 let pacing: Double = usage.usedPercent - target
 
                 if let fiveHourUsage = snapshot.fiveHourUsage {
@@ -91,12 +94,29 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
 
                     Text(
-                        "Day \(usage.currentDay(at: .now)) target: "
+                        "Day \(usage.currentDay(at: now)) target: "
                             + "\(Int(target.rounded()))% used · "
                             + "\(Int(usage.usedPercent.rounded()))% used",
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                    Picker("Weekly pacing", selection: self.$pacing) {
+                        ForEach(WeeklyUsage.Pacing.allCases, id: \.self) { pacing in
+                            switch pacing {
+                                case .linear:
+                                    Text("Linear").tag(pacing)
+
+                                case .logarithmic:
+                                    Text("Logarithmic").tag(pacing)
+                            }
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help("Weekly pacing")
                 }
 
                 if snapshot.availableResetCount > 0 {

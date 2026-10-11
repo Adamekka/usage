@@ -7,6 +7,11 @@
 import Foundation
 
 struct WeeklyUsage {
+    enum Pacing: String, CaseIterable {
+        case linear
+        case logarithmic
+    }
+
     static let duration: TimeInterval = 7 * 24 * 60 * 60
 
     let resetAt: Date
@@ -21,7 +26,16 @@ struct WeeklyUsage {
         return min(7, max(1, Int(elapsed / (24 * 60 * 60)) + 1))
     }
 
-    func targetUsedPercent(at date: Date) -> Double {
-        100 / 7 * Double(self.currentDay(at: date))
+    func targetUsedPercent(at date: Date, pacing: Pacing) -> Double {
+        let day: Double = .init(self.currentDay(at: date))
+
+        switch pacing {
+            case .linear:
+                return 100 / 7 * day
+
+            case .logarithmic:
+                // Shift the logarithm to start at zero and normalize it so day 7 reaches 100%.
+                return 100 * (log1p(day) / log(8))
+        }
     }
 }
