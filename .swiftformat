@@ -31,6 +31,7 @@
 --enable emptyBraces
 --emptybraces no-space
 --enable emptyExtensions
+--disable ifExpressions
 --enable enumNamespaces
 --enumnamespaces always
 --enable environmentEntry
@@ -66,6 +67,8 @@
 --enable noForceTryInTests
 --enable noForceUnwrapInTests
 --enable noGuardInTests
+--guard-like-if-statements convert
+--boolean-guards-in-tests convert
 --enable numberFormatting
 --hex-literal-case uppercase
 --enable opaqueGenericParameters
@@ -78,6 +81,7 @@
 --enable preferFlatMap
 --enable preferForLoop
 --enable preferKeyPath
+--enable preferLazyMap
 --enable preferMinOverSorted
 --enable preferSwiftStringAPI
 --enable preferSwiftTesting
@@ -90,6 +94,7 @@
 --enable redundantClosure
 --enable redundantEmptyView
 --enable redundantEquatable
+--enable redundantExtendedLifetime
 --enable redundantExtensionACL
 --enable redundantFileprivate
 --enable redundantGet
@@ -103,10 +108,11 @@
 --nilinit insert
 --enable redundantObjc
 --enable redundantOptionalBinding
+--redundant-optional-binding always
 --enable redundantParens
 --enable redundantPattern
 --enable redundantPublic
---enable redundantRawValues
+--disable redundantRawValues
 --enable redundantReturn
 --enable redundantSelf
 --self insert
@@ -129,6 +135,7 @@
 --enable sortDeclarations
 --enable sortImports
 --enable sortSwitchCases
+--locale en_US
 --enable sortTypealiases
 --enable spaceAroundBraces
 --enable spaceAroundBrackets
