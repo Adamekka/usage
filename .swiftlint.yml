@@ -43,6 +43,7 @@ disabled_rules:
   - prefer_condition_list
   - prefixed_toplevel_constant
   - redundant_self
+  - redundant_string_enum_value
   - redundant_type_annotation
   - required_deinit
   - sorted_enum_cases
