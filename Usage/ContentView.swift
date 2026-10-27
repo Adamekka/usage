@@ -179,7 +179,9 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
 
                 Button {
-                    Task { await self.store.refresh() }
+                    Task {
+                        await self.store.refresh()
+                    }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -194,7 +196,9 @@ struct ContentView: View {
         .padding(16)
         .frame(width: 360)
         .onAppear {
-            Task { await self.store.refresh() }
+            Task {
+                await self.store.refresh()
+            }
         }
     }
 }
