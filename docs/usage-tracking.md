@@ -1,6 +1,6 @@
 # Usage tracking
 
-Usage is a personal, native macOS 26 menu-bar app.
+Usage is a personal, native macOS menu-bar app.
 
 ## App behavior
 
