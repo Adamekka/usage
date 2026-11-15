@@ -12,11 +12,11 @@ struct ContentView: View {
     let store: UsageStore
 
     private enum Tab: CaseIterable {
-        case openAI
+        case codex
         case network
     }
 
-    @State private var tab: Tab = .openAI
+    @State private var tab: Tab = .codex
 
     var body: some View {
         let version: String = {
@@ -31,8 +31,8 @@ struct ContentView: View {
             Picker("Tab", selection: self.$tab) {
                 ForEach(Tab.allCases, id: \.self) { tab in
                     switch tab {
-                        case .openAI:
-                            Text("OpenAI").tag(tab)
+                        case .codex:
+                            Text("Codex").tag(tab)
 
                         case .network:
                             Text("Network").tag(tab)
@@ -43,7 +43,7 @@ struct ContentView: View {
             .labelsHidden()
 
             switch self.tab {
-                case .openAI:
+                case .codex:
                     OpenAIUsageView(store: self.store)
 
                 case .network:
@@ -62,7 +62,7 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if self.tab == .openAI {
+                if self.tab == .codex {
                     Button {
                         Task {
                             await self.store.refresh()
@@ -71,7 +71,7 @@ struct ContentView: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .disabled(self.store.isRefreshing)
-                    .help("Refresh OpenAI usage")
+                    .help("Refresh Codex usage")
                 }
 
                 Button("Quit") {

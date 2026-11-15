@@ -131,7 +131,7 @@ struct OpenAIUsageView: View {
             } else if self.store.isRefreshing {
                 HStack {
                     ProgressView()
-                    Text("Loading OpenAI usage…")
+                    Text("Loading Codex usage…")
                 }
                 .frame(maxWidth: .infinity, minHeight: 80)
             } else {
