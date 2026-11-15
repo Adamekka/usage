@@ -13,6 +13,7 @@ struct ContentView: View {
 
     private enum Tab: CaseIterable {
         case codex
+        case claude
         case network
     }
 
@@ -34,6 +35,9 @@ struct ContentView: View {
                         case .codex:
                             Text("Codex").tag(tab)
 
+                        case .claude:
+                            Text("Claude").tag(tab)
+
                         case .network:
                             Text("Network").tag(tab)
                     }
@@ -45,6 +49,17 @@ struct ContentView: View {
             switch self.tab {
                 case .codex:
                     OpenAIUsageView(store: self.store)
+
+                case .claude:
+                    UsageStatusView(
+                        errorMessage: self.store.claudeErrorMessage,
+                        loadingText: "Loading Claude usage…",
+                        signInHint: "Run `claude`, then refresh.",
+                        snapshot: self.store.claudeSnapshot,
+                        store: self.store,
+                    ) { snapshot in
+                        UsageLimitsView(fiveHourUsage: snapshot.fiveHourUsage, weeklyUsage: snapshot.weeklyUsage)
+                    }
 
                 case .network:
                     NetworkView()
@@ -62,7 +77,7 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if self.tab == .codex {
+                if self.tab == .codex || self.tab == .claude {
                     Button {
                         Task {
                             await self.store.refresh()
@@ -71,7 +86,7 @@ struct ContentView: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .disabled(self.store.isRefreshing)
-                    .help("Refresh Codex usage")
+                    .help("Refresh usage")
                 }
 
                 Button("Quit") {

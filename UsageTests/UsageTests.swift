@@ -136,4 +136,73 @@ struct UsageTests {
             ) == nil,
         )
     }
+
+    @Test
+    func `Claude credentials decode the Claude Code keychain item`() throws {
+        let data: Data = .init(
+            #"{"claudeAiOauth":{"accessToken":"access","refreshToken":"refresh","expiresAt":1794798650224}}"#.utf8,
+        )
+        let decoder: JSONDecoder = .init()
+        decoder.dateDecodingStrategy = .millisecondsSince1970
+        let credentials: ClaudeCredentials = try decoder.decode(ClaudeCredentials.self, from: data)
+
+        #expect(credentials.claudeAiOauth.accessToken == "access")
+        #expect(credentials.claudeAiOauth.expiresAt == Date(timeIntervalSince1970: 1_794_798_650.224))
+    }
+
+    @Test
+    func `Claude usage decodes microsecond reset timestamps`() throws {
+        let data: Data = .init(
+            #"""
+            {"five_hour":{"utilization":6.0,"resets_at":"2026-11-15T23:50:00.203064+00:00"},
+            "seven_day":{"utilization":1.0,"resets_at":"2026-11-17T01:00:00.203089+00:00"},
+            "seven_day_opus":null}
+            """#.utf8,
+        )
+        let snapshot: ClaudeSnapshot = try ClaudeClient.snapshotForTesting(from: data)
+
+        #expect(snapshot.fiveHourUsage?.usedPercent == 6)
+        #expect(try abs(#require(snapshot.fiveHourUsage?.resetAt.timeIntervalSince1970) - 1_794_786_600.203) < 0.001)
+        #expect(snapshot.weeklyUsage.usedPercent == 1)
+        #expect(abs(snapshot.weeklyUsage.resetAt.timeIntervalSince1970 - 1_794_877_200.203) < 0.001)
+    }
+
+    @Test
+    func `Claude five-hour window without a reset is hidden`() throws {
+        let data: Data = .init(
+            #"""
+            {"five_hour":{"utilization":0.0,"resets_at":null},
+            "seven_day":{"utilization":12.0,"resets_at":"2026-11-17T01:00:00+00:00"}}
+            """#.utf8,
+        )
+
+        #expect(try ClaudeClient.snapshotForTesting(from: data).fiveHourUsage == nil)
+    }
+
+    @Test
+    func `Claude weekly window is required`() {
+        let data: Data = .init(#"{"five_hour":null,"seven_day":null}"#.utf8)
+
+        #expect(throws: ClaudeError.weeklyLimitUnavailable) {
+            try ClaudeClient.snapshotForTesting(from: data)
+        }
+    }
+
+    @Test
+    func `Claude status codes map to login and request failures`() throws {
+        try ClaudeClient.validateForTesting(statusCode: 200)
+
+        #expect(throws: ClaudeError.needsClaudeLogin) {
+            try ClaudeClient.validateForTesting(statusCode: 401)
+        }
+        #expect(throws: ClaudeError.needsClaudeLogin) {
+            try ClaudeClient.validateForTesting(statusCode: 403)
+        }
+        #expect(throws: ClaudeError.rateLimited) {
+            try ClaudeClient.validateForTesting(statusCode: 429)
+        }
+        #expect(throws: ClaudeError.requestFailed(500)) {
+            try ClaudeClient.validateForTesting(statusCode: 500)
+        }
+    }
 }

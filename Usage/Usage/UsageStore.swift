@@ -9,9 +9,11 @@ import Observation
 
 @Observable
 final class UsageStore {
-    private(set) var errorMessage: String? = nil
+    private(set) var claudeErrorMessage: String? = nil
+    private(set) var claudeSnapshot: ClaudeSnapshot? = nil
     private(set) var isRefreshing: Bool = false
-    private(set) var snapshot: OpenAISnapshot? = nil
+    private(set) var openAIErrorMessage: String? = nil
+    private(set) var openAISnapshot: OpenAISnapshot? = nil
 
     func refresh() async {
         guard !self.isRefreshing else {
@@ -21,11 +23,25 @@ final class UsageStore {
         self.isRefreshing = true
         defer { self.isRefreshing = false }
 
-        do {
-            self.snapshot = try await OpenAIClient().fetchSnapshot()
-            self.errorMessage = nil
-        } catch {
-            self.errorMessage = error.localizedDescription
+        async let openAIResult: Result<OpenAISnapshot, any Error> = .init { try await OpenAIClient().fetchSnapshot() }
+        async let claudeResult: Result<ClaudeSnapshot, any Error> = .init { try await ClaudeClient().fetchSnapshot() }
+
+        switch await openAIResult {
+            case let .success(snapshot):
+                self.openAISnapshot = snapshot
+                self.openAIErrorMessage = nil
+
+            case let .failure(error):
+                self.openAIErrorMessage = error.localizedDescription
+        }
+
+        switch await claudeResult {
+            case let .success(snapshot):
+                self.claudeSnapshot = snapshot
+                self.claudeErrorMessage = nil
+
+            case let .failure(error):
+                self.claudeErrorMessage = error.localizedDescription
         }
     }
 }
