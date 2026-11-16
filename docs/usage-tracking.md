@@ -24,4 +24,4 @@ Usage is a personal, native macOS menu-bar app.
 - Remaining usage is `100 - usedPercent`.
 - Treat the server-provided reset and expiration timestamps as authoritative.
 
-See [weekly pacing](weekly-pacing.md) for daily usage targets, shared by both providers.
+See [pacing](pacing.md) for usage targets, shared by both providers and both windows.

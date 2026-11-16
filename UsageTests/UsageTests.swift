@@ -43,27 +43,36 @@ struct UsageTests {
     }
 
     @Test
-    func `whole day pacing targets`() {
+    func `pacing targets advance smoothly within a day`() {
         let resetAt: Date = .init(timeIntervalSince1970: 7 * 24 * 60 * 60)
         let usage: WeeklyUsage = .init(resetAt: resetAt, usedPercent: 35)
 
         #expect(usage.currentDay(at: Date(timeIntervalSince1970: 1)) == 1)
         #expect(usage.currentDay(at: Date(timeIntervalSince1970: 24 * 60 * 60)) == 2)
         #expect(
-            usage.targetUsedPercent(at: Date(timeIntervalSince1970: 24 * 60 * 60), pacing: .linear) == 100.0 / 7 * 2,
+            abs(
+                Pacing.linear.targetUsedPercent(
+                    resetAt: resetAt,
+                    duration: WeeklyUsage.duration,
+                    at: Date(timeIntervalSince1970: 36 * 60 * 60),
+                ) - 100.0 / 7 * 1.5,
+            ) < 0.000_001,
         )
     }
 
     @Test
     func `logarithmic daily budgets match the agreed curve`() {
         let resetAt: Date = .init(timeIntervalSince1970: WeeklyUsage.duration)
-        let usage: WeeklyUsage = .init(resetAt: resetAt, usedPercent: 35)
         let dailyBudgets: [Double] = [33.3, 19.5, 13.8, 10.7, 8.8, 7.4, 6.4]
         var previousTarget: Double = 0
 
         for (index, budget) in dailyBudgets.enumerated() {
-            let date: Date = .init(timeIntervalSince1970: Double(index) * 24 * 60 * 60)
-            let target: Double = usage.targetUsedPercent(at: date, pacing: .logarithmic)
+            let date: Date = .init(timeIntervalSince1970: Double(index + 1) * 24 * 60 * 60)
+            let target: Double = Pacing.logarithmic.targetUsedPercent(
+                resetAt: resetAt,
+                duration: WeeklyUsage.duration,
+                at: date,
+            )
 
             #expect(abs(target - previousTarget - budget) < 0.05)
             previousTarget = target
@@ -72,18 +81,42 @@ struct UsageTests {
         #expect(previousTarget == 100)
     }
 
-    @Test(arguments: WeeklyUsage.Pacing.allCases)
-    func `pacing targets keep whole day and reset boundaries`(pacing: WeeklyUsage.Pacing) {
+    @Test(arguments: Pacing.allCases)
+    func `pacing targets clamp to window boundaries`(pacing: Pacing) {
         let resetAt: Date = .init(timeIntervalSince1970: WeeklyUsage.duration)
-        let usage: WeeklyUsage = .init(resetAt: resetAt, usedPercent: 35)
         let start: Date = .init(timeIntervalSince1970: 0)
-        let firstTarget: Double = usage.targetUsedPercent(at: start, pacing: pacing)
 
-        #expect(usage.targetUsedPercent(at: start.addingTimeInterval(-1), pacing: pacing) == firstTarget)
-        #expect(usage.targetUsedPercent(at: start.addingTimeInterval(24 * 60 * 60 - 1), pacing: pacing) == firstTarget)
-        #expect(usage.targetUsedPercent(at: resetAt.addingTimeInterval(-1), pacing: pacing) == 100)
-        #expect(usage.targetUsedPercent(at: resetAt, pacing: pacing) == 100)
-        #expect(usage.targetUsedPercent(at: resetAt.addingTimeInterval(1), pacing: pacing) == 100)
+        func target(at date: Date) -> Double {
+            pacing.targetUsedPercent(resetAt: resetAt, duration: WeeklyUsage.duration, at: date)
+        }
+
+        #expect(target(at: start.addingTimeInterval(-1)) == 0)
+        #expect(target(at: start) == 0)
+        #expect(target(at: start.addingTimeInterval(60)) > 0)
+        #expect(target(at: resetAt.addingTimeInterval(-60)) < 100)
+        #expect(target(at: resetAt) == 100)
+        #expect(target(at: resetAt.addingTimeInterval(1)) == 100)
+    }
+
+    @Test(arguments: Pacing.allCases)
+    func `five-hour pacing follows the weekly curve over five hours`(pacing: Pacing) {
+        let weeklyResetAt: Date = .init(timeIntervalSince1970: WeeklyUsage.duration)
+        let fiveHourResetAt: Date = .init(timeIntervalSince1970: FiveHourUsage.duration)
+
+        for fraction in [0, 0.25, 0.5, 1] {
+            let weeklyTarget: Double = pacing.targetUsedPercent(
+                resetAt: weeklyResetAt,
+                duration: WeeklyUsage.duration,
+                at: Date(timeIntervalSince1970: WeeklyUsage.duration * fraction),
+            )
+            let fiveHourTarget: Double = pacing.targetUsedPercent(
+                resetAt: fiveHourResetAt,
+                duration: FiveHourUsage.duration,
+                at: Date(timeIntervalSince1970: FiveHourUsage.duration * fraction),
+            )
+
+            #expect(abs(weeklyTarget - fiveHourTarget) < 0.000_001)
+        }
     }
 
     @Test
