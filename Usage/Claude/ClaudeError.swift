@@ -9,10 +9,23 @@ import Foundation
 enum ClaudeError: LocalizedError, Equatable {
     case invalidClaudeLogin
     case invalidResponse
+    case missingClaudeLogin
     case needsClaudeLogin
     case rateLimited
     case requestFailed(Int)
     case weeklyLimitUnavailable
+
+    /// Whether the failure means there is no usable Claude access, such as no login or no subscription limit, rather
+    /// than a temporary problem that the next refresh may fix.
+    var isAccessLost: Bool {
+        switch self {
+            case .invalidClaudeLogin, .missingClaudeLogin, .needsClaudeLogin, .weeklyLimitUnavailable:
+                true
+
+            case .invalidResponse, .rateLimited, .requestFailed:
+                false
+        }
+    }
 
     var errorDescription: String? {
         switch self {
@@ -21,6 +34,9 @@ enum ClaudeError: LocalizedError, Equatable {
 
             case .invalidResponse:
                 "Claude returned an invalid response."
+
+            case .missingClaudeLogin:
+                "Run `claude` and sign in to connect Claude."
 
             case .needsClaudeLogin:
                 "Run `claude` to reconnect Claude."

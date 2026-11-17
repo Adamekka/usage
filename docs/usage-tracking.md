@@ -13,6 +13,10 @@ Usage is a personal, native macOS menu-bar app.
 - Show both providers in the menu bar, each behind its logo, with five-hour and weekly remaining usage and reset times.
   Keep the label compact: stack the five-hour row above the weekly row, and lead each row with a remaining bar and its
   pace marker. Omit AM/PM from the five-hour reset time, since it is at most five hours away.
+- Hide a provider from the menu bar while its latest refresh shows no access: a missing, unreadable, rejected, or
+  expired login, or no weekly limit, as after a subscription ends. Its tab still shows the reason. Temporary failures,
+  such as network errors, rate limiting, or server errors, keep showing the last values. When no provider has access,
+  show "Usage" instead so the menu bar item stays clickable.
 - An exhausted window hides its remaining percent but keeps its bar and reset time. While the weekly window is
   exhausted, show only the weekly row for that provider. A window is exhausted when its displayed remaining usage
   rounds to 0%.

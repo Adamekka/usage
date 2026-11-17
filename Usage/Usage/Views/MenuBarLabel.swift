@@ -146,12 +146,28 @@ struct MenuBarLabel: View {
             }
         }
 
+        // A provider without access, such as no login or an ended subscription, only takes up menu bar space, so it is
+        // hidden there and its tab explains why. Temporary failures keep showing the last values.
+        let isOpenAIShown: Bool = !self.store.isOpenAIAccessLost
+        let isClaudeShown: Bool = !self.store.isClaudeAccessLost
+
         // MenuBarExtra flattens its label to one image and plain text, dropping additional and embedded images, so
         // the whole label is rendered into one template image that the menu bar tints for its appearance.
         let renderer: ImageRenderer = .init(
             content: HStack(spacing: 8) {
-                provider(logo: .openAI, rows: openAIRows)
-                provider(logo: .claude, rows: claudeRows)
+                if isOpenAIShown {
+                    provider(logo: .openAI, rows: openAIRows)
+                }
+
+                if isClaudeShown {
+                    provider(logo: .claude, rows: claudeRows)
+                }
+
+                // An empty label would leave nothing to click, so the app name stands in when no provider has access.
+                if !isOpenAIShown, !isClaudeShown {
+                    Text("Usage")
+                        .font(Font(NSFont.menuBarFont(ofSize: 0)))
+                }
             }
             .font(.system(size: 9.5, weight: .medium).monospacedDigit())
             .foregroundStyle(.black),
@@ -164,11 +180,23 @@ struct MenuBarLabel: View {
 
         image.isTemplate = true
 
-        let openAIText: String = openAIRows?.map(\.accessibilityText).joined(separator: ", ") ?? status
-        let claudeText: String = claudeRows?.map(\.accessibilityText).joined(separator: ", ") ?? status
+        let accessibilityLabel: String = if !isOpenAIShown, !isClaudeShown {
+            "Usage: Codex and Claude are unavailable."
+        } else {
+            [
+                isOpenAIShown
+                    ? "Codex: \(openAIRows?.map(\.accessibilityText).joined(separator: ", ") ?? status)."
+                    : nil,
+                isClaudeShown
+                    ? "Claude: \(claudeRows?.map(\.accessibilityText).joined(separator: ", ") ?? status)."
+                    : nil,
+            ]
+            .compactMap(\.self)
+            .joined(separator: " ")
+        }
 
         return Image(nsImage: image)
-            .accessibilityLabel("Codex: \(openAIText). Claude: \(claudeText).")
+            .accessibilityLabel(accessibilityLabel)
             .task {
                 while !Task.isCancelled {
                     do {

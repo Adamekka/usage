@@ -22,6 +22,10 @@ struct OpenAIClient {
             .homeDirectoryForCurrentUser
             .appending(path: ".codex/auth.json")
 
+        guard FileManager.default.fileExists(atPath: authURL.path(percentEncoded: false)) else {
+            throw OpenAIError.missingCodexLogin
+        }
+
         let auth: CodexAuth
 
         do {

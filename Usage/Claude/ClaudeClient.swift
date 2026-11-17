@@ -16,8 +16,13 @@ struct ClaudeClient {
             kSecReturnData as String: true,
         ]
         var item: CFTypeRef?
+        let status: OSStatus = SecItemCopyMatching(query as CFDictionary, &item)
 
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else {
+        guard status != errSecItemNotFound else {
+            throw ClaudeError.missingClaudeLogin
+        }
+
+        guard status == errSecSuccess, let data = item as? Data else {
             throw ClaudeError.invalidClaudeLogin
         }
 
