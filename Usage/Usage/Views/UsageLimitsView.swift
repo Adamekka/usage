@@ -43,8 +43,7 @@ struct UsageLimitsView: View {
     let fiveHourUsage: FiveHourUsage?
     let weeklyUsage: WeeklyUsage
 
-    /// The key predates five-hour pacing and is kept so the stored selection survives updates.
-    @AppStorage("weeklyPacing") private var pacing: Pacing = .linear
+    @AppStorage(Pacing.storageKey) private var pacing: Pacing = .defaultValue
 
     var body: some View {
         // The pacing target and marker depend on the current time, which SwiftUI does not observe, so redraw

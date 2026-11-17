@@ -10,6 +10,10 @@ enum Pacing: String, CaseIterable {
     case linear
     case logarithmic
 
+    /// The key predates five-hour pacing and is kept so the stored selection survives updates.
+    static let storageKey: String = "weeklyPacing"
+    static let defaultValue: Pacing = .linear
+
     func targetUsedPercent(resetAt: Date, duration: TimeInterval, at date: Date) -> Double {
         let elapsed: TimeInterval = date.timeIntervalSince(resetAt.addingTimeInterval(-duration))
         // A continuous fraction so the target advances smoothly instead of jumping at fixed boundaries.
