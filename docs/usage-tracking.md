@@ -11,9 +11,8 @@ Usage is a personal, native macOS menu-bar app.
   `Claude Code-credentials` login Keychain item; never refresh, modify, or store Claude credentials. An expired token
   means Claude Code must run again.
 - Show both providers in the menu bar, each behind its logo, with five-hour and weekly remaining usage and reset times.
-  Hide an exhausted five-hour window, and hide a provider entirely while its weekly window is exhausted. A window is
-  exhausted when its displayed remaining usage rounds to 0%. When every provider is hidden, show "Usage" instead so
-  the menu bar item stays clickable.
+  An exhausted window hides its remaining usage but keeps its reset time. While the weekly window is exhausted, show
+  only the weekly reset time for that provider. A window is exhausted when its displayed remaining usage rounds to 0%.
 - Keep the app out of the Dock and do not add ordinary windows.
 - Refresh both providers on launch, every five minutes, and on explicit user request. A failure on one provider does not
   block the other, and a failed refresh keeps the last successful values.
