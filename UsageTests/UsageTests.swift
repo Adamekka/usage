@@ -81,6 +81,27 @@ struct UsageTests {
         #expect(previousTarget == 100)
     }
 
+    @Test
+    func `exponential daily budgets match the agreed curve`() {
+        let resetAt: Date = .init(timeIntervalSince1970: WeeklyUsage.duration)
+        let dailyBudgets: [Double] = [4.94, 6.65, 8.95, 12.05, 16.21, 21.82, 29.37]
+        var previousTarget: Double = 0
+
+        for (index, budget) in dailyBudgets.enumerated() {
+            let date: Date = .init(timeIntervalSince1970: Double(index + 1) * 24 * 60 * 60)
+            let target: Double = Pacing.exponential.targetUsedPercent(
+                resetAt: resetAt,
+                duration: WeeklyUsage.duration,
+                at: date,
+            )
+
+            #expect(abs(target - previousTarget - budget) < 0.005)
+            previousTarget = target
+        }
+
+        #expect(previousTarget == 100)
+    }
+
     @Test(arguments: Pacing.allCases)
     func `pacing targets clamp to window boundaries`(pacing: Pacing) {
         let resetAt: Date = .init(timeIntervalSince1970: WeeklyUsage.duration)

@@ -9,6 +9,7 @@ import Foundation
 enum Pacing: String, CaseIterable {
     case linear
     case logarithmic
+    case exponential
 
     /// The key predates five-hour pacing and is kept so the stored selection survives updates.
     static let storageKey: String = "weeklyPacing"
@@ -27,6 +28,11 @@ enum Pacing: String, CaseIterable {
                 // Scale every window to seven units so it follows the same curve as the weekly window's seven days.
                 // Shift the logarithm to start at zero and normalize it so the end of the window reaches 100%.
                 return 100 * (log1p(7 * fraction) / log(8))
+
+            case .exponential:
+                // The inverse of the logarithmic curve, so it saves usage for later in the same proportion.
+                // `pow` keeps both ends exact, so the window starts at 0% and reaches exactly 100% at reset.
+                return 100 * ((pow(8, fraction) - 1) / 7)
         }
     }
 }

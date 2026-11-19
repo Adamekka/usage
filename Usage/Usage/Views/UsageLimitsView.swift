@@ -151,6 +151,9 @@ struct UsageLimitsView: View {
 
                                 case .logarithmic:
                                     Text("Logarithmic").tag(pacing)
+
+                                case .exponential:
+                                    Text("Exponential").tag(pacing)
                             }
                         }
                     }
