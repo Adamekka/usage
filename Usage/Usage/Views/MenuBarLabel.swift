@@ -144,6 +144,9 @@ struct MenuBarLabel: View {
                     Text(status)
                 }
             }
+            // The label's stack splits its width evenly between providers instead of giving each its ideal width, so
+            // without this a provider with bars loses a few points to its neighbor and truncates its text.
+            .fixedSize()
         }
 
         // A provider without access, such as no login or an ended subscription, only takes up menu bar space, so it is
