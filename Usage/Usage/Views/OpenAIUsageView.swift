@@ -17,7 +17,12 @@ struct OpenAIUsageView: View {
             snapshot: self.store.openAISnapshot,
             store: self.store,
         ) { snapshot in
-            UsageLimitsView(fiveHourUsage: snapshot.fiveHourUsage, weeklyUsage: snapshot.weeklyUsage)
+            // Codex reports no model-scoped weekly limit.
+            UsageLimitsView(
+                fableWeeklyUsage: nil,
+                fiveHourUsage: snapshot.fiveHourUsage,
+                weeklyUsage: snapshot.weeklyUsage,
+            )
 
             if snapshot.availableResetCount > 0 {
                 Divider()

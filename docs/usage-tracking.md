@@ -7,7 +7,8 @@ Usage is a personal, native macOS menu-bar app.
 - Track Codex (OpenAI) and Claude subscription limits side by side, each in its own tab.
 - Codex: track the seven-day usage window, the five-hour usage window when returned, and available rate-limit reset
   credits. Read authentication from `~/.codex/auth.json`; never refresh, modify, or store Codex credentials.
-- Claude: track the seven-day and five-hour usage windows. Read authentication from Claude Code's
+- Claude: track the seven-day and five-hour usage windows, and Fable's weekly limit when the account has one. Show
+  Fable's weekly limit only in the Claude tab, not in the menu bar. Read authentication from Claude Code's
   `Claude Code-credentials` login Keychain item; never refresh, modify, or store Claude credentials. An expired token
   means Claude Code must run again.
 - Show both providers in the menu bar, each behind its logo, with five-hour and weekly remaining usage and reset times.
@@ -30,6 +31,9 @@ Usage is a personal, native macOS menu-bar app.
   optional.
 - Claude: read the weekly window from `seven_day` and the five-hour window from `five_hour`, where `utilization` is the
   used percent. The weekly window is required; a five-hour window without a reset time has not started and is hidden.
+- Claude Fable: read the weekly limit from the `limits` row whose `kind` is `weekly_scoped` and whose
+  `scope.model.display_name` starts with the word "Fable", where `percent` is the used percent. It is optional, and
+  hidden without a reset time.
 - Remaining usage is `100 - usedPercent`.
 - Treat the server-provided reset and expiration timestamps as authoritative.
 

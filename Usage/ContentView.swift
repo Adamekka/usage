@@ -58,7 +58,11 @@ struct ContentView: View {
                         snapshot: self.store.claudeSnapshot,
                         store: self.store,
                     ) { snapshot in
-                        UsageLimitsView(fiveHourUsage: snapshot.fiveHourUsage, weeklyUsage: snapshot.weeklyUsage)
+                        UsageLimitsView(
+                            fableWeeklyUsage: snapshot.fableWeeklyUsage,
+                            fiveHourUsage: snapshot.fiveHourUsage,
+                            weeklyUsage: snapshot.weeklyUsage,
+                        )
                     }
 
                 case .network:

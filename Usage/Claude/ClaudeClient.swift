@@ -102,7 +102,19 @@ struct ClaudeClient {
             throw ClaudeError.weeklyLimitUnavailable
         }
 
+        // Matches how Claude Code identifies the Fable row, whose display name may carry a version suffix.
+        let fableLimit: ClaudeUsageLimit? = usage.limits?.first { limit in
+            limit.kind == "weekly_scoped"
+                && limit.scope?.model?.displayName.range(
+                    of: #"^fable\b"#,
+                    options: [.regularExpression, .caseInsensitive],
+                ) != nil
+        }
+
         return ClaudeSnapshot(
+            fableWeeklyUsage: fableLimit.flatMap { limit in
+                limit.resetsAt.map { WeeklyUsage(resetAt: $0, usedPercent: limit.percent) }
+            },
             fiveHourUsage: usage.fiveHour.flatMap { window in
                 window.resetsAt.map { FiveHourUsage(resetAt: $0, usedPercent: window.utilization) }
             },

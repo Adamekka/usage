@@ -234,6 +234,42 @@ struct UsageTests {
     }
 
     @Test
+    func `Claude Fable weekly limit is read from the scoped limits`() throws {
+        let data: Data = .init(
+            #"""
+            {"five_hour":null,
+            "seven_day":{"utilization":40.0,"resets_at":"2026-11-24T01:00:00.262542+00:00"},
+            "limits":[
+            {"kind":"weekly_all","group":"weekly","percent":40,"resets_at":"2026-11-24T01:00:00.262542+00:00",
+            "scope":null},
+            {"kind":"weekly_scoped","group":"weekly","percent":4,"resets_at":"2026-11-24T01:00:00.262693+00:00",
+            "scope":{"model":{"id":null,"display_name":"Fable"},"surface":null}}]}
+            """#.utf8,
+        )
+        let fableWeeklyUsage: WeeklyUsage = try #require(
+            ClaudeClient.snapshotForTesting(from: data).fableWeeklyUsage,
+        )
+
+        #expect(fableWeeklyUsage.usedPercent == 4)
+        #expect(abs(fableWeeklyUsage.resetAt.timeIntervalSince1970 - 1_795_482_000.263) < 0.001)
+    }
+
+    @Test
+    func `Claude Fable weekly limit is hidden without a Fable row`() throws {
+        let data: Data = .init(
+            #"""
+            {"seven_day":{"utilization":40.0,"resets_at":"2026-11-24T01:00:00+00:00"},
+            "limits":[
+            {"kind":"weekly_scoped","percent":4,"resets_at":"2026-11-24T01:00:00+00:00",
+            "scope":{"model":{"display_name":"Sonnet"}}},
+            {"kind":"weekly_scoped","percent":4,"resets_at":null,"scope":{"model":{"display_name":"Fable"}}}]}
+            """#.utf8,
+        )
+
+        #expect(try ClaudeClient.snapshotForTesting(from: data).fableWeeklyUsage == nil)
+    }
+
+    @Test
     func `Claude weekly window is required`() {
         let data: Data = .init(#"{"five_hour":null,"seven_day":null}"#.utf8)
 

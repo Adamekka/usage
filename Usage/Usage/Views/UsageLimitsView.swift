@@ -40,6 +40,46 @@ struct UsageLimitsView: View {
         }
     }
 
+    /// One usage window's remaining percent, remaining bar with pace marker, reset time, and pace.
+    private struct WindowSection: View {
+        let remainingPercent: Double
+        let resetAt: Date
+        let systemImage: String
+        let target: Double
+        let title: String
+        let usedPercent: Double
+
+        var body: some View {
+            HStack(alignment: .firstTextBaseline) {
+                Label(self.title, systemImage: self.systemImage)
+                    .font(.headline)
+
+                Spacer()
+
+                Text("\(Int(self.remainingPercent.rounded()))% left")
+                    .font(.title3.bold().monospacedDigit())
+            }
+
+            ProgressView(value: self.remainingPercent, total: 100)
+                .tint(.green)
+                .overlay {
+                    PaceMarker(target: self.target)
+                }
+                .accessibilityLabel("\(self.title) remaining")
+
+            HStack {
+                Text("Resets " + self.resetAt.formatted(.dateTime.weekday(.wide).hour().minute()))
+
+                Spacer()
+
+                PaceText(target: self.target, usedPercent: self.usedPercent)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    let fableWeeklyUsage: WeeklyUsage?
     let fiveHourUsage: FiveHourUsage?
     let weeklyUsage: WeeklyUsage
 
@@ -59,81 +99,33 @@ struct UsageLimitsView: View {
                 )
 
                 if let fiveHourUsage = self.fiveHourUsage {
-                    let fiveHourTarget: Double = self.pacing.targetUsedPercent(
-                        resetAt: fiveHourUsage.resetAt,
-                        duration: FiveHourUsage.duration,
-                        at: now,
-                    )
-
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Label("5-hour limit", systemImage: "clock")
-                                .font(.headline)
-
-                            Spacer()
-
-                            Text("\(Int(fiveHourUsage.remainingPercent.rounded()))% left")
-                                .font(.title3.bold().monospacedDigit())
-                        }
-
-                        ProgressView(value: fiveHourUsage.remainingPercent, total: 100)
-                            .tint(.green)
-                            .overlay {
-                                PaceMarker(target: fiveHourTarget)
-                            }
-                            .accessibilityLabel("5-hour limit remaining")
-
-                        HStack {
-                            Text(
-                                "Resets "
-                                    + fiveHourUsage.resetAt.formatted(
-                                        .dateTime.weekday(.wide).hour().minute(),
-                                    ),
-                            )
-
-                            Spacer()
-
-                            PaceText(target: fiveHourTarget, usedPercent: fiveHourUsage.usedPercent)
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        WindowSection(
+                            remainingPercent: fiveHourUsage.remainingPercent,
+                            resetAt: fiveHourUsage.resetAt,
+                            systemImage: "clock",
+                            target: self.pacing.targetUsedPercent(
+                                resetAt: fiveHourUsage.resetAt,
+                                duration: FiveHourUsage.duration,
+                                at: now,
+                            ),
+                            title: "5-hour limit",
+                            usedPercent: fiveHourUsage.usedPercent,
+                        )
                     }
 
                     Divider()
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Label("Weekly limit", systemImage: "calendar.badge.clock")
-                            .font(.headline)
-
-                        Spacer()
-
-                        Text("\(Int(usage.remainingPercent.rounded()))% left")
-                            .font(.title3.bold().monospacedDigit())
-                    }
-
-                    ProgressView(value: usage.remainingPercent, total: 100)
-                        .tint(.green)
-                        .overlay {
-                            PaceMarker(target: target)
-                        }
-                        .accessibilityLabel("Weekly limit remaining")
-
-                    HStack {
-                        Text(
-                            "Resets "
-                                + usage.resetAt.formatted(
-                                    .dateTime.weekday(.wide).hour().minute(),
-                                ),
-                        )
-
-                        Spacer()
-
-                        PaceText(target: target, usedPercent: usage.usedPercent)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    WindowSection(
+                        remainingPercent: usage.remainingPercent,
+                        resetAt: usage.resetAt,
+                        systemImage: "calendar.badge.clock",
+                        target: target,
+                        title: "Weekly limit",
+                        usedPercent: usage.usedPercent,
+                    )
 
                     Text(
                         "Day \(usage.currentDay(at: now)) target: "
@@ -162,6 +154,25 @@ struct UsageLimitsView: View {
                     .controlSize(.small)
                     .fixedSize()
                     .help("Pacing")
+                }
+
+                if let fableWeeklyUsage = self.fableWeeklyUsage {
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        WindowSection(
+                            remainingPercent: fableWeeklyUsage.remainingPercent,
+                            resetAt: fableWeeklyUsage.resetAt,
+                            systemImage: "calendar.badge.clock",
+                            target: self.pacing.targetUsedPercent(
+                                resetAt: fableWeeklyUsage.resetAt,
+                                duration: WeeklyUsage.duration,
+                                at: now,
+                            ),
+                            title: "Fable weekly limit",
+                            usedPercent: fableWeeklyUsage.usedPercent,
+                        )
+                    }
                 }
             }
         }
